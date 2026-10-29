@@ -8,18 +8,21 @@ const GFX_KEY = 'salvage.graphics.v1';
 
 // Every option a preset sets. Later steps add their effects here and in GFX_OPTIONS.
 const GFX_PRESETS = {
-  low: { renderScale: 0.75, dynamicRes: true, aa: 'fxaa', shadows: 0, shadowRange: 'near', bloom: true, bloomStrength: 0.45,
+  low: { surfaces: 'texture', renderScale: 0.75, dynamicRes: true, aa: 'fxaa', shadows: 0, shadowRange: 'near', bloom: true, bloomStrength: 0.45,
     ao: false, aoStrength: 0.85, aoFull: false, flare: false, cinematic: false, reflections: 'basic', haze: false },
-  medium: { renderScale: 1, dynamicRes: true, aa: 'fxaa', shadows: 2048, shadowRange: 'near', bloom: true, bloomStrength: 0.55,
+  medium: { surfaces: 'shader', renderScale: 1, dynamicRes: true, aa: 'fxaa', shadows: 2048, shadowRange: 'near', bloom: true, bloomStrength: 0.55,
     ao: true, aoStrength: 0.85, aoFull: false, flare: false, cinematic: true, reflections: 'scene', haze: true },
-  high: { renderScale: 1, dynamicRes: false, aa: 'smaa', shadows: 2048, shadowRange: 'far', bloom: true, bloomStrength: 0.55,
+  high: { surfaces: 'shader', renderScale: 1, dynamicRes: false, aa: 'smaa', shadows: 2048, shadowRange: 'far', bloom: true, bloomStrength: 0.55,
     ao: true, aoStrength: 0.9, aoFull: false, flare: true, cinematic: true, reflections: 'scene', haze: true },
-  ultra: { renderScale: 1.25, dynamicRes: false, aa: 'msaa', shadows: 4096, shadowRange: 'far', bloom: true, bloomStrength: 0.6,
+  ultra: { surfaces: 'shader', renderScale: 1.25, dynamicRes: false, aa: 'msaa', shadows: 4096, shadowRange: 'far', bloom: true, bloomStrength: 0.6,
     ao: true, aoStrength: 1, aoFull: true, flare: true, cinematic: true, reflections: 'scene', haze: true },
 };
 
 // UI description: one row per option, rendered by renderGfxPanel()
 const GFX_OPTIONS = [
+  { key: 'surfaces', label: 'Hull detail', kind: 'select', choices: [['shader', 'Procedural · computed per pixel'], ['texture', 'Painted textures · cheaper']],
+    hint: 'Procedural plating stays sharp up close: seams, rivets, chipped paint, grime and scorch follow each hull. Applies after a reload.',
+    reload: (a, b) => a !== b },
   { key: 'renderScale', label: 'Render scale', kind: 'range', min: 0.5, max: 1.5, step: 0.05, fmt: (v) => `${Math.round(v * 100)}%`,
     hint: 'Pixels rendered relative to your screen. Below 100% is blurrier and faster.' },
   { key: 'dynamicRes', label: 'Dynamic resolution', kind: 'toggle', hint: 'Lowers render scale on its own when frames take longer than 24 ms.' },

@@ -12,7 +12,7 @@ const THREE_VERSION = JSON.parse(rd('package.json')).dependencies.three.replace(
 
 const shell = rd('client/shell.html');
 // client modules share one scope, concatenated in dependency order
-const main = ['client/main.js', 'client/graphics.js', 'client/ships.js', 'client/hub.js'].map(rd).join('\n');
+const main = ['client/main.js', 'client/graphics.js', 'client/surfaces.js', 'client/ships.js', 'client/hub.js'].map(rd).join('\n');
 const wasm = readFileSync(path.join(root, 'build/core.wasm')).toString('base64');
 const js = rd('build/core.js');
 const cut = js.indexOf('var retasmFunc = asmFunc(');

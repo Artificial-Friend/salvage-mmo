@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import {
   uniform, vec2, vec3, vec4, float, mix, smoothstep, abs, normalView, uv, pass, time, sin, renderOutput,
   mrt, output, directionToColor, colorToDirection, sample, screenUV,
+  Fn, positionLocal, normalLocal, positionView, faceDirection, floor, fract, min, select, step, clamp, hash,
+  mx_fractal_noise_float, mx_noise_float, fwidth, mod, max,
 } from 'three/tsl';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { lensflare } from 'three/addons/tsl/display/LensflareNode.js';
@@ -12,6 +14,7 @@ import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 
 // =====================================================================
 //  Layout constants mirrored from core.cpp
@@ -243,11 +246,20 @@ function pbr(maps, opts = {}) {
 // =====================================================================
 const UVS = 11; // metres per texture repeat
 function scaleUV(g, su, sv) { const uvA = g.attributes.uv; for (let i = 0; i < uvA.count; i++) uvA.setXY(i, uvA.getX(i) * su, uvA.getY(i) * sv); return g; }
+// Boxes get a small chamfer: a real hull plate never has a razor edge, and the bevel catches a
+// highlight that reads the shape from a distance. UVs are box-projected in metres.
 function boxG(w, h, d) {
-  const g = new THREE.BoxGeometry(w, h, d);
-  const uvA = g.attributes.uv;
-  const dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
-  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uvA.setXY(i, uvA.getX(i) * dims[f][0] / UVS, uvA.getY(i) * dims[f][1] / UVS); }
+  const m = Math.min(w, h, d);
+  const r = Math.min(m * 0.12, 0.6);
+  const g = r > 0.004 ? new RoundedBoxGeometry(w, h, d, 1, r) : new THREE.BoxGeometry(w, h, d);
+  const pos = g.attributes.position, nrm = g.attributes.normal, uvA = g.attributes.uv;
+  for (let i = 0; i < pos.count; i++) {
+    const ax = Math.abs(nrm.getX(i)), ay = Math.abs(nrm.getY(i)), az = Math.abs(nrm.getZ(i));
+    const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+    if (ax >= ay && ax >= az) uvA.setXY(i, z / UVS, y / UVS);
+    else if (ay >= az) uvA.setXY(i, x / UVS, z / UVS);
+    else uvA.setXY(i, x / UVS, y / UVS);
+  }
   return g;
 }
 function cylG(r1, r2, h, seg = 12, open = false, t0 = 0, tl = Math.PI * 2) {
@@ -497,13 +509,13 @@ const MAT = {};
 const IRM = {};
 function buildMaterials() {
   bootStatus('Painting hull plating…');
-  MAT.starter = pbr(hullMaps({ seed: 11, base: '#c8c4b6', base2: '#c46a2b', stripe: '#d8a22a', rust: 0.18, scorch: 0.12, panel: 72, bare: 0.25, rough: 0.5 }));
-  MAT.tcn = pbr(hullMaps({ seed: 21, base: '#59626a', base2: '#3e464d', stripe: '#c9c3b0', rust: 0.25, scorch: 0.42, panel: 80, bare: 0.2, rough: 0.58 }), { side: THREE.DoubleSide });
-  MAT.ard = pbr(hullMaps({ seed: 31, base: '#7a3e2e', base2: '#4f2a22', stripe: '#d0c8b6', rust: 0.3, scorch: 0.45, panel: 64, bare: 0.3, rough: 0.62 }), { side: THREE.DoubleSide });
-  MAT.bfc = pbr(hullMaps({ seed: 41, base: '#8a8458', base2: '#c88a2a', stripe: '#1c1a14', rust: 0.45, scorch: 0.35, panel: 56, bare: 0.35, rough: 0.68 }), { side: THREE.DoubleSide });
-  MAT.metal = pbr(hullMaps({ seed: 51, base: '#9a9fa3', rust: 0.1, scorch: 0.1, panel: 160, bare: 0.9, rough: 0.35, decals: false }));
-  MAT.dark = pbr(hullMaps({ seed: 61, base: '#2a2e31', rust: 0.15, scorch: 0.3, panel: 48, bare: 0.12, rough: 0.7, decals: false }), { side: THREE.DoubleSide });
-  MAT.scav = pbr(hullMaps({ seed: 71, base: '#c27b26', base2: '#3b3f3a', stripe: '#111', rust: 0.3, scorch: 0.2, panel: 60, bare: 0.25, rough: 0.6 }));
+  MAT.starter = surf('starter', () => pbr(hullMaps({ seed: 11, base: '#c8c4b6', base2: '#c46a2b', stripe: '#d8a22a', rust: 0.18, scorch: 0.12, panel: 72, bare: 0.25, rough: 0.5 })));
+  MAT.tcn = surf('tcn', () => pbr(hullMaps({ seed: 21, base: '#59626a', base2: '#3e464d', stripe: '#c9c3b0', rust: 0.25, scorch: 0.42, panel: 80, bare: 0.2, rough: 0.58 }), { side: THREE.DoubleSide }));
+  MAT.ard = surf('ard', () => pbr(hullMaps({ seed: 31, base: '#7a3e2e', base2: '#4f2a22', stripe: '#d0c8b6', rust: 0.3, scorch: 0.45, panel: 64, bare: 0.3, rough: 0.62 }), { side: THREE.DoubleSide }));
+  MAT.bfc = surf('bfc', () => pbr(hullMaps({ seed: 41, base: '#8a8458', base2: '#c88a2a', stripe: '#1c1a14', rust: 0.45, scorch: 0.35, panel: 56, bare: 0.35, rough: 0.68 }), { side: THREE.DoubleSide }));
+  MAT.metal = surf('metal', () => pbr(hullMaps({ seed: 51, base: '#9a9fa3', rust: 0.1, scorch: 0.1, panel: 160, bare: 0.9, rough: 0.35, decals: false })));
+  MAT.dark = surf('dark', () => pbr(hullMaps({ seed: 61, base: '#2a2e31', rust: 0.15, scorch: 0.3, panel: 48, bare: 0.12, rough: 0.7, decals: false }), { side: THREE.DoubleSide }));
+  MAT.scav = surf('scav', () => pbr(hullMaps({ seed: 71, base: '#c27b26', base2: '#3b3f3a', stripe: '#111', rust: 0.3, scorch: 0.2, panel: 60, bare: 0.25, rough: 0.6 })));
   MAT.drone = new THREE.MeshStandardMaterial({ color: '#2b2f33', roughness: 0.42, metalness: 0.85 });
   MAT.glass = new THREE.MeshStandardMaterial({ color: '#0b1216', roughness: 0.08, metalness: 0.2, emissive: new THREE.Color(0.05, 0.25, 0.28) });
   MAT.rock = new THREE.MeshStandardMaterial({ color: '#544c45', roughness: 0.92, metalness: 0.25, flatShading: true });

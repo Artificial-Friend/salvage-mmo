@@ -127,8 +127,8 @@ function buildHub() {
   hs.environment = world.env; hs.environmentIntensity = 0.18;
   const cam = new THREE.PerspectiveCamera(48, window.innerWidth / window.innerHeight, 0.3, 90000);
   hs.add(cam);
-  MAT.deck = MAT.deck || pbr(hullMaps({ seed: 81, base: '#3c4143', base2: '#2c3133', stripe: '#c9a23a', rust: 0.2, scorch: 0.15, panel: 96, bare: 0.25, rough: 0.6 }));
-  MAT.wall = MAT.wall || pbr(hullMaps({ seed: 91, base: '#4a4f50', base2: '#3a3f40', stripe: '#c9a23a', rust: 0.25, scorch: 0.1, panel: 72, bare: 0.18, rough: 0.66 }), { side: THREE.DoubleSide });
+  MAT.deck = MAT.deck || surf('deck', () => pbr(hullMaps({ seed: 81, base: '#3c4143', base2: '#2c3133', stripe: '#c9a23a', rust: 0.2, scorch: 0.15, panel: 96, bare: 0.25, rough: 0.6 })));
+  MAT.wall = MAT.wall || surf('wall', () => pbr(hullMaps({ seed: 91, base: '#4a4f50', base2: '#3a3f40', stripe: '#c9a23a', rust: 0.25, scorch: 0.1, panel: 72, bare: 0.18, rough: 0.66 }), { side: THREE.DoubleSide }));
   // big surfaces get larger plating
   for (const mt of [MAT.deck, MAT.wall]) for (const k of ['map', 'roughnessMap', 'bumpMap']) if (mt[k]) mt[k].repeat.set(0.32, 0.32);
   const lampMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(6.5, 5.9, 5.0) });
@@ -189,7 +189,7 @@ function buildHub() {
   // cool spill through the door and bounce from the deck.
   const hemiL = new THREE.HemisphereLight(new THREE.Color(0.62, 0.58, 0.52), new THREE.Color(0.16, 0.15, 0.14), 0.22);
   hs.add(hemiL);
-  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 13000, 300, 0.62, 0.6, 1.5);
+  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 9500, 300, 0.62, 0.6, 1.5);
   key.position.set(30, BH - 4, -24); key.target.position.set(0, 12, 0); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0003; key.shadow.normalBias = 0.4;
   const dock2 = new THREE.SpotLight(new THREE.Color(1, 0.95, 0.88), 9000, 300, 0.7, 0.7, 1.5);
