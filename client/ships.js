@@ -146,11 +146,11 @@ function writeConfig(c) {
 // ---------------------------------------------------------------------
 function ensureShipMats() {
   if (MAT.racer) return;
-  MAT.racer = pbr(hullMaps({ seed: 111, base: '#d9dcd8', base2: '#2f8fa0', stripe: '#2f8fa0', rust: 0.08, scorch: 0.08, panel: 88, bare: 0.12, rough: 0.38 }));
-  MAT.hauler = pbr(hullMaps({ seed: 121, base: '#c98a2b', base2: '#59605d', stripe: '#161512', rust: 0.35, scorch: 0.15, panel: 64, bare: 0.3, rough: 0.62 }));
-  MAT.container = pbr(hullMaps({ seed: 125, base: '#6e7d52', base2: '#a5492f', stripe: '#d9d4c4', rust: 0.4, scorch: 0.1, panel: 40, bare: 0.25, rough: 0.7 }));
-  MAT.gunship = pbr(hullMaps({ seed: 131, base: '#4b5157', base2: '#373c41', stripe: '#d0a03a', rust: 0.1, scorch: 0.2, panel: 72, bare: 0.18, rough: 0.5 }));
-  MAT.capital = pbr(hullMaps({ seed: 141, base: '#7b8186', base2: '#5c6267', stripe: '#d0a03a', rust: 0.12, scorch: 0.12, panel: 96, bare: 0.15, rough: 0.52 }));
+  MAT.racer = surf('racer', () => pbr(hullMaps({ seed: 111, base: '#d9dcd8', base2: '#2f8fa0', stripe: '#2f8fa0', rust: 0.08, scorch: 0.08, panel: 88, bare: 0.12, rough: 0.38 })));
+  MAT.hauler = surf('hauler', () => pbr(hullMaps({ seed: 121, base: '#c98a2b', base2: '#59605d', stripe: '#161512', rust: 0.35, scorch: 0.15, panel: 64, bare: 0.3, rough: 0.62 })));
+  MAT.container = surf('container', () => pbr(hullMaps({ seed: 125, base: '#6e7d52', base2: '#a5492f', stripe: '#d9d4c4', rust: 0.4, scorch: 0.1, panel: 40, bare: 0.25, rough: 0.7 })));
+  MAT.gunship = surf('gunship', () => pbr(hullMaps({ seed: 131, base: '#4b5157', base2: '#373c41', stripe: '#d0a03a', rust: 0.1, scorch: 0.2, panel: 72, bare: 0.18, rough: 0.5 })));
+  MAT.capital = surf('capital', () => pbr(hullMaps({ seed: 141, base: '#7b8186', base2: '#5c6267', stripe: '#d0a03a', rust: 0.12, scorch: 0.12, panel: 96, bare: 0.15, rough: 0.52 })));
 }
 
 // every builder returns { meshes: [[geo, mat, irKey]], radiators: [{pos, geo, side, fold}], nozzles: [{pos, r, len}],

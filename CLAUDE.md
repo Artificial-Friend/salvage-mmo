@@ -11,7 +11,7 @@
 - Every new core behaviour gets a regression test in `tests/core.test.mjs`.
 
 ## Client
-- Client files share one scope and are concatenated in order: `main.js`, `graphics.js`, `ships.js`, `hub.js` (see `tools/build-page.mjs`).
+- Client files share one scope and are concatenated in order: `main.js`, `graphics.js`, `surfaces.js`, `ships.js`, `hub.js` (see `tools/build-page.mjs`).
 - Every post-processing pipeline is built by `buildPipeline()` in `graphics.js`; new effects go there with a switch in `GFX_OPTIONS` and a value in every preset.
 - Three.js is pinned (see `package.json`); the deployable page loads it from jsDelivr at that exact version.
 - WebGPU compatibility mode (OpenGL-backed) cannot resolve multisampled post-processing passes; `msaaSamples()` returns 0 there.
