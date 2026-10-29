@@ -2,6 +2,8 @@
 
 A browser MMO about salvage in a hard sci-fi solar system. You fly clanky, slow ships with real Newtonian physics, cut parts off the wrecks of old battles, and build your fleet out of what you tear loose. Heat is your signature, mass is your jump cost, and anything you lose stays out there for someone else.
 
+**Play it:** https://artificial-friend.github.io/salvage-mmo/ (desktop browser; every green build of `main` is published there)
+
 **Status:** single-player prototype (v0.5). Multiplayer is the next milestone.
 
 ## Play locally
