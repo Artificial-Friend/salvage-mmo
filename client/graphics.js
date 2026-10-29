@@ -22,7 +22,8 @@ const GFX_OPTIONS = [
   { key: 'aa', label: 'Anti-aliasing', kind: 'select', choices: [['off', 'Off'], ['fxaa', 'FXAA · cheap'], ['smaa', 'SMAA · sharper'], ['msaa', 'MSAA 4× · best edges']],
     hint: 'MSAA is the cleanest on thin trusses and radiator fins and the most expensive.' },
   { key: 'shadows', label: 'Sun shadows', kind: 'select', choices: [[0, 'Off'], [1024, '1024'], [2048, '2048'], [4096, '4096']],
-    hint: 'Shadow map resolution. Higher keeps shadow edges crisp on big wrecks.' },
+    hint: 'Shadow map resolution. Higher keeps shadow edges crisp on big wrecks. Turning shadows on or off applies after a reload.',
+    reload: (a, b) => (a > 0) !== (b > 0) },
   { key: 'bloom', label: 'Bloom', kind: 'toggle', hint: 'Glow around the sun, drive plumes, cut seams and the laser.' },
   { key: 'bloomStrength', label: 'Bloom strength', kind: 'range', min: 0.1, max: 1.2, step: 0.05, fmt: (v) => v.toFixed(2), dep: 'bloom' },
 ];
@@ -65,13 +66,16 @@ function basePixelRatio() { return THREE.MathUtils.clamp(window.devicePixelRatio
 
 // apply everything; rebuilds both pipelines (flight and hangar)
 function applyGraphics() {
+  if (!world.gfxBoot) world.gfxBoot = { ...GFX };
   const pr = basePixelRatio();
   renderer.setPixelRatio(pr);
   world.q = { avg: 16, t: 0, pr, base: pr };
   // shadows: caster state and map size (the renderer resizes the map on its next shadow pass)
+  // switching casting on/off at runtime trips an ordering bug in three r186, so that part is fixed at start-up
   const size = GFX.shadows | 0;
+  if (world.shadowsOn === undefined) world.shadowsOn = size > 0 && !DBG.has('noshadow');
   for (const light of [sunLight, HUB && HUB.key].filter(Boolean)) {
-    light.castShadow = size > 0 && !DBG.has('noshadow');
+    light.castShadow = world.shadowsOn;
     if (size > 0) light.shadow.mapSize.set(size, size);
   }
   if (pipeline) pipeline.dispose?.();
@@ -135,7 +139,7 @@ function renderGfxPanel() {
   }).join('');
   $('gfxbody').innerHTML = `
     <div class="cards4">${presets}</div>
-    <p class="m">${cur === 'custom' ? 'Custom settings.' : `Preset: ${cur}.`} Changes apply immediately.</p>
+    <p class="m">${cur === 'custom' ? 'Custom settings.' : `Preset: ${cur}.`} Changes apply immediately${needsReload() ? '' : '.'}${needsReload() ? ', except one that needs a reload. <button type="button" class="mini" id="gfxreload">Reload now</button>' : ''}</p>
     <div class="grows">${rows}
       <div class="grow"><div class="gl"><b>Frame-time meter</b><span>Also F3. Shows fps, frame time, the slowest 1% of frames, resolution and draw calls.</span></div>
         <div class="gc"><button type="button" class="tog ${GFX.meter ? 'on' : ''}" data-gfx-key="meter" aria-pressed="${GFX.meter}">${GFX.meter ? 'On' : 'Off'}</button></div></div>
@@ -151,6 +155,9 @@ function renderGfxPanel() {
   const r2 = $('rendpref2'); r2.value = world.rendererPref;
   r2.addEventListener('change', () => { try { localStorage.setItem('salvage.renderer', r2.value); } catch { /* storage unavailable */ } $('rendpref').value = r2.value; $('rendnote').hidden = false; $('gfxrend').textContent = 'Applies after reload.'; });
 }
+function needsReload() {
+  return GFX_OPTIONS.some((o) => o.reload && world.gfxBoot && o.reload(world.gfxBoot[o.key], GFX[o.key]));
+}
 function setGfx(key, val) {
   GFX[key] = val; GFX.preset = currentPresetName();
   saveGfx(); applyGraphics(); renderGfxPanel();
@@ -164,6 +171,7 @@ function bindGfxPanel() {
     const t = e.target.closest('button.tog[data-gfx-key]');
     if (t) { setGfx(t.dataset.gfxKey, !GFX[t.dataset.gfxKey]); return; }
     if (e.target.id === 'benchgo') runBenchmark();
+    if (e.target.id === 'gfxreload') location.reload();
   });
   $('gfxbody').addEventListener('change', (e) => {
     const k = e.target.dataset?.gfxKey; if (!k) return;
