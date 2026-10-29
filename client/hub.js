@@ -131,7 +131,7 @@ function buildHub() {
   MAT.wall = MAT.wall || pbr(hullMaps({ seed: 91, base: '#4a4f50', base2: '#3a3f40', stripe: '#c9a23a', rust: 0.25, scorch: 0.1, panel: 72, bare: 0.18, rough: 0.66 }), { side: THREE.DoubleSide });
   // big surfaces get larger plating
   for (const mt of [MAT.deck, MAT.wall]) for (const k of ['map', 'roughnessMap', 'bumpMap']) if (mt[k]) mt[k].repeat.set(0.32, 0.32);
-  const lampMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(3.2, 2.9, 2.4) });
+  const lampMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(6.5, 5.9, 5.0) });
   const warnMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(4, 1.6, 0.3) });
   // bay: 150 wide, 64 high, 190 deep; the far wall is a pressure door open to space
   const BW = 150, BH = 64, BD = 190, DOOR_W = 104, DOOR_H = 46;
@@ -151,6 +151,7 @@ function buildHub() {
     ribs.push(place(boxG(2.4, BH, 2.4), [BW / 2 - 1.2, BH / 2, z]), place(boxG(2.4, BH, 2.4), [-BW / 2 + 1.2, BH / 2, z]));
     ribs.push(place(boxG(BW, 2.4, 2.4), [0, BH - 1.2, z]));
     lamps.push(place(boxG(1.2, 0.4, 6), [BW / 2 - 3, BH - 3, z + 8]), place(boxG(1.2, 0.4, 6), [-BW / 2 + 3, BH - 3, z + 8]));
+    lamps.push(place(boxG(0.6, 0.3, 10), [0, BH - 2.6, z]), place(boxG(0.6, 0.3, 10), [30, BH - 2.6, z]), place(boxG(0.6, 0.3, 10), [-30, BH - 2.6, z]));
   }
   // gantry crane over the cradle
   ribs.push(place(boxG(BW - 6, 3, 3), [0, BH - 8, 18]), place(boxG(BW - 6, 3, 3), [0, BH - 8, -18]));
@@ -164,7 +165,7 @@ function buildHub() {
   }
   // landing pads for the starter cutters
   const pads = [[-46, -30], [-46, 10], [-46, 50]];
-  for (const [x, z] of pads) ribs.push(place(cylG(11, 11, 0.6, 32), [x, 0.3, z]));
+  for (const [x, z] of pads) { ribs.push(place(cylG(11, 11, 0.6, 32), [x, 0.3, z])); lamps.push(place(cylG(1.6, 1.6, 0.4, 24), [x, BH - 2.6, z])); }
   const deck = new THREE.Mesh(merge([bay[0]]), MAT.deck);
   const walls = new THREE.Mesh(merge(bay.slice(1)), MAT.wall);
   const frame = new THREE.Mesh(merge(ribs), MAT.metal);
@@ -184,18 +185,41 @@ function buildHub() {
   hs.add(new THREE.Mesh(merge(lines), lineMat));
 
   // lighting: work lights on the cradle, cool spill from the door
-  const hemiL = new THREE.HemisphereLight(new THREE.Color(0.55, 0.5, 0.45), new THREE.Color(0.08, 0.08, 0.09), 0.12);
+  // Lighting rig: a shadow-casting key over the dry dock, a soft overhead light per pad,
+  // cool spill through the door and bounce from the deck.
+  const hemiL = new THREE.HemisphereLight(new THREE.Color(0.62, 0.58, 0.52), new THREE.Color(0.16, 0.15, 0.14), 0.22);
   hs.add(hemiL);
-  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 11000, 260, 0.55, 0.55, 1.6);
-  key.position.set(34, BH - 6, -30); key.target.position.set(0, 12, 0); key.castShadow = true;
+  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 13000, 300, 0.62, 0.6, 1.5);
+  key.position.set(30, BH - 4, -24); key.target.position.set(0, 12, 0); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0003; key.shadow.normalBias = 0.4;
-  const fill = new THREE.SpotLight(new THREE.Color(0.75, 0.85, 1.0), 3500, 260, 0.7, 0.7, 1.6);
-  fill.position.set(-40, BH - 8, 40); fill.target.position.set(0, 10, 0);
-  const padLight = new THREE.SpotLight(new THREE.Color(1, 0.9, 0.75), 6500, 200, 0.75, 0.6, 1.6);
-  padLight.position.set(-46, BH - 6, 10); padLight.target.position.set(-46, 0, 10);
-  const doorSun = new THREE.DirectionalLight(new THREE.Color(1, 0.95, 0.88), 0.45);
+  const dock2 = new THREE.SpotLight(new THREE.Color(1, 0.95, 0.88), 9000, 300, 0.7, 0.7, 1.5);
+  dock2.position.set(-22, BH - 4, 30); dock2.target.position.set(0, 8, 0);
+  const fill = new THREE.SpotLight(new THREE.Color(0.7, 0.82, 1.0), 4500, 300, 0.8, 0.8, 1.5);
+  fill.position.set(0, BH - 10, 90); fill.target.position.set(0, 4, 0);
+  hs.add(key, key.target, dock2, dock2.target, fill, fill.target);
+  const beams = [];
+  for (const [x, z] of [[-46, -30], [-46, 10], [-46, 50]]) {
+    const s = new THREE.SpotLight(new THREE.Color(1, 0.92, 0.8), 9000, 120, 0.42, 0.65, 1.5);
+    s.position.set(x, BH - 3, z); s.target.position.set(x, 0, z);
+    hs.add(s, s.target);
+    beams.push([x, z, 14]);
+  }
+  beams.push([16, -2, 22], [-10, 22, 22]);
+  const doorSun = new THREE.DirectionalLight(new THREE.Color(1, 0.95, 0.88), 0.6);
   doorSun.position.set(10, 30, 300); doorSun.target.position.set(0, 0, 0);
-  hs.add(key, key.target, fill, fill.target, padLight, padLight.target, doorSun, doorSun.target);
+  hs.add(doorSun, doorSun.target);
+  // light shafts: soft additive cones under each lamp, brightest near the source
+  const shaftMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+  const shaftU = uniform(1);
+  const yy = uv().y;   // 1 at the lamp, 0 at the deck
+  shaftMat.colorNode = vec3(1.0, 0.86, 0.66).mul(yy.pow(1.6).mul(0.05).add(0.006)).mul(abs(normalView.z).pow(2.2)).mul(shaftU);
+  const shafts = new THREE.Group();
+  for (const [x, z, r] of beams) {
+    const c = new THREE.Mesh(new THREE.CylinderGeometry(1.2, r, BH - 4, 40, 1, true), shaftMat);
+    c.position.set(x, (BH - 4) / 2, z);
+    shafts.add(c);
+  }
+  hs.add(shafts);
 
   // selection marker ring under the chosen cutter
   const selRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 4, 96), new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(0.4, 2.6, 2.2) }));
@@ -203,7 +227,7 @@ function buildHub() {
 
   const pipe = buildPipeline(hs, cam).pipe;
   window.addEventListener('resize', () => { cam.aspect = window.innerWidth / window.innerHeight; cam.updateProjectionMatrix(); });
-  HUB = { scene: hs, cam, pipe, key, models: [null, null, null, null], built: ['', '', '', ''], selRing, yaw: 0.85, pitch: 0.28, dist: 70, focus: new THREE.Vector3(0, 13, 0), want: new THREE.Vector3(0, 13, 0), wantDist: 64, drag: null, auto: true, idle: 0, pads };
+  HUB = { scene: hs, cam, pipe, key, shafts, shaftU, models: [null, null, null, null], built: ['', '', '', ''], selRing, yaw: 0.85, pitch: 0.28, dist: 70, focus: new THREE.Vector3(0, 13, 0), want: new THREE.Vector3(0, 13, 0), wantDist: 64, drag: null, auto: true, idle: 0, pads };
   bindHubInput();
   syncBays();
 }

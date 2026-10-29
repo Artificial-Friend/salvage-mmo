@@ -8,10 +8,14 @@ const GFX_KEY = 'salvage.graphics.v1';
 
 // Every option a preset sets. Later steps add their effects here and in GFX_OPTIONS.
 const GFX_PRESETS = {
-  low: { renderScale: 0.75, dynamicRes: true, aa: 'fxaa', shadows: 0, bloom: true, bloomStrength: 0.45 },
-  medium: { renderScale: 1, dynamicRes: true, aa: 'fxaa', shadows: 2048, bloom: true, bloomStrength: 0.55 },
-  high: { renderScale: 1, dynamicRes: false, aa: 'smaa', shadows: 2048, bloom: true, bloomStrength: 0.55 },
-  ultra: { renderScale: 1.25, dynamicRes: false, aa: 'msaa', shadows: 4096, bloom: true, bloomStrength: 0.6 },
+  low: { renderScale: 0.75, dynamicRes: true, aa: 'fxaa', shadows: 0, shadowRange: 'near', bloom: true, bloomStrength: 0.45,
+    ao: false, aoStrength: 0.85, aoFull: false, flare: false, cinematic: false, reflections: 'basic', haze: false },
+  medium: { renderScale: 1, dynamicRes: true, aa: 'fxaa', shadows: 2048, shadowRange: 'near', bloom: true, bloomStrength: 0.55,
+    ao: true, aoStrength: 0.85, aoFull: false, flare: false, cinematic: true, reflections: 'scene', haze: true },
+  high: { renderScale: 1, dynamicRes: false, aa: 'smaa', shadows: 2048, shadowRange: 'far', bloom: true, bloomStrength: 0.55,
+    ao: true, aoStrength: 0.9, aoFull: false, flare: true, cinematic: true, reflections: 'scene', haze: true },
+  ultra: { renderScale: 1.25, dynamicRes: false, aa: 'msaa', shadows: 4096, shadowRange: 'far', bloom: true, bloomStrength: 0.6,
+    ao: true, aoStrength: 1, aoFull: true, flare: true, cinematic: true, reflections: 'scene', haze: true },
 };
 
 // UI description: one row per option, rendered by renderGfxPanel()
@@ -24,8 +28,19 @@ const GFX_OPTIONS = [
   { key: 'shadows', label: 'Sun shadows', kind: 'select', choices: [[0, 'Off'], [1024, '1024'], [2048, '2048'], [4096, '4096']],
     hint: 'Shadow map resolution. Higher keeps shadow edges crisp on big wrecks. Turning shadows on or off applies after a reload.',
     reload: (a, b) => (a > 0) !== (b > 0) },
+  { key: 'shadowRange', label: 'Shadow distance', kind: 'select', choices: [['near', 'Near · around your ship'], ['far', 'Far · cascaded, whole field']],
+    hint: 'Far splits the sun shadow into cascades so distant hulks and the battlecruiser cast shadows too. Applies after a reload.', dep: 'shadows',
+    reload: (a, b) => a !== b },
+  { key: 'ao', label: 'Ambient occlusion', kind: 'toggle', hint: 'Contact shadow in every seam, crevice and overhang (GTAO). The biggest single step away from a flat look.' },
+  { key: 'aoStrength', label: 'Occlusion strength', kind: 'range', min: 0.3, max: 1, step: 0.05, fmt: (v) => v.toFixed(2), dep: 'ao' },
+  { key: 'aoFull', label: 'Full-resolution occlusion', kind: 'toggle', hint: 'Sharper occlusion on thin parts; costs about twice as much.', dep: 'ao' },
+  { key: 'reflections', label: 'Reflections', kind: 'select', choices: [['basic', 'Basic · sky only'], ['scene', 'Scene · hangar captured']],
+    hint: 'Scene captures the hangar into the reflection map so metal reflects its lamps and walls.' },
+  { key: 'haze', label: 'Light shafts', kind: 'toggle', hint: 'Visible beams in the hangar air under each lamp.' },
   { key: 'bloom', label: 'Bloom', kind: 'toggle', hint: 'Glow around the sun, drive plumes, cut seams and the laser.' },
   { key: 'bloomStrength', label: 'Bloom strength', kind: 'range', min: 0.1, max: 1.2, step: 0.05, fmt: (v) => v.toFixed(2), dep: 'bloom' },
+  { key: 'flare', label: 'Lens flare', kind: 'toggle', hint: 'Ghosts and glare from the sun and other very bright light.', dep: 'bloom' },
+  { key: 'cinematic', label: 'Camera finish', kind: 'toggle', hint: 'Subtle vignette, film grain and lens fringing at the edges of the frame.' },
 ];
 
 function loadGfx() {
@@ -46,23 +61,82 @@ function currentPresetName() {
 //  Pipeline: scene pass → bloom → tone map → FXAA/SMAA
 // ---------------------------------------------------------------------
 function msaaSamples() { return GFX.aa === 'msaa' && !world.compat ? 4 : 0; }
-function buildPipeline(sc, cam) {
+function buildPipeline(sc, cam, opts = {}) {
   const p = pass(sc, cam, { samples: msaaSamples() });
-  let out = p.getTextureNode('output');
+  if (GFX.ao) p.setMRT(mrt({ output, normal: directionToColor(normalView) }));
+  const col = p.getTextureNode('output');
+  let out = col;
+  if (GFX.ao) {
+    const nTex = p.getTextureNode('normal');
+    const aoNode = ao(p.getTextureNode('depth'), sample((u) => colorToDirection(nTex.sample(u))), cam);
+    aoNode.resolutionScale = GFX.aoFull ? 1 : 0.5;
+    aoNode.radius.value = opts.aoRadius || 3;
+    aoNode.distanceExponent.value = 1.4;
+    aoNode.thickness.value = opts.aoThickness || 2;
+    const occ = aoNode.getTextureNode().r;
+    out = vec4(col.rgb.mul(mix(float(1), occ, GFX.aoStrength)), col.a);
+  }
   let bloomNode = null;
-  if (GFX.bloom) { bloomNode = bloom(out, GFX.bloomStrength, 0.45, 1.25); out = out.add(bloomNode); }
+  if (GFX.bloom) {
+    bloomNode = bloom(out, GFX.bloomStrength, 0.45, 1.25);
+    out = out.add(bloomNode);
+    if (GFX.flare) {
+      const fl = lensflare(bloomNode, { threshold: float(opts.flareThreshold || 0.85), ghostSamples: float(4), ghostSpacing: float(0.22), ghostAttenuationFactor: float(28), downSampleRatio: 4 });
+      out = out.add(fl.mul(opts.flareGain || 0.35));
+    }
+  }
   const pipe = new THREE.RenderPipeline(renderer);
-  if (GFX.aa === 'fxaa' || GFX.aa === 'smaa') {
-    // edge filters work on the final, tone-mapped image
+  if (GFX.aa === 'fxaa' || GFX.aa === 'smaa' || GFX.cinematic) {
+    // edge filters and the camera finish work on the final, tone-mapped image
     pipe.outputColorTransform = false;
     out = renderOutput(out);
-    out = GFX.aa === 'fxaa' ? fxaa(out) : smaa(out);
+    if (GFX.cinematic) out = chromaticAberration(out, float(0.04), vec2(0.5, 0.5), float(1.0));
+    if (GFX.aa === 'fxaa') out = fxaa(out);
+    else if (GFX.aa === 'smaa') out = smaa(out);
+    if (GFX.cinematic) {
+      const d = screenUV.sub(0.5).mul(vec2(1.0, 0.82)).length();
+      const vig = float(1).sub(smoothstep(0.45, 0.95, d).mul(0.32));
+      out = film(vec4(out.rgb.mul(vig), 1), float(0.12));
+    }
   }
   pipe.outputNode = out;
   return { pipe, bloom: bloomNode };
 }
 
 function basePixelRatio() { return THREE.MathUtils.clamp(window.devicePixelRatio * GFX.renderScale, 0.5, 2.5); }
+
+// cascaded sun shadows cover the whole field; the near map follows the ship
+let csm = null;
+function setShadowRange(far) {
+  if (far && !csm) {
+    csm = new CSMShadowNode(sunLight, { cascades: 3, maxFar: 2400, mode: 'practical', lightMargin: 600 });
+    csm.fade = true;
+    sunLight.shadow.shadowNode = csm;
+  } else if (!far && csm) {
+    sunLight.shadow.shadowNode = null; csm.dispose?.(); csm = null;
+  }
+  world.csm = !!csm;
+}
+// the hangar reflects itself: capture it once into a prefiltered environment map
+let hubEnvRT = null;
+function setHubReflections(on) {
+  if (on && !hubEnvRT) {
+    const keep = HUB.scene.environment;
+    HUB.scene.environment = null;
+    for (const m of HUB.models) if (m) m.grp.visible = false;
+    HUB.shafts.visible = false;
+    const pm = new THREE.PMREMGenerator(renderer);
+    hubEnvRT = pm.fromScene(HUB.scene, 0.03, 0.5, 400, { size: 256, position: new THREE.Vector3(0, 18, 0) });
+    pm.dispose();
+    for (const m of HUB.models) if (m) m.grp.visible = true;
+    HUB.shafts.visible = !!GFX.haze;
+    HUB.scene.environment = hubEnvRT.texture; HUB.scene.environmentIntensity = 0.7;
+    HUB.envKeep = keep;
+  } else if (!on && hubEnvRT) {
+    HUB.scene.environment = HUB.envKeep || world.env; HUB.scene.environmentIntensity = 0.18;
+    hubEnvRT.dispose(); hubEnvRT = null;
+  }
+}
 
 // apply everything; rebuilds both pipelines (flight and hangar)
 function applyGraphics() {
@@ -78,11 +152,14 @@ function applyGraphics() {
     light.castShadow = world.shadowsOn;
     if (size > 0) light.shadow.mapSize.set(size, size);
   }
+  // cascades are also chosen once at start-up (swapping the shadow node live has the same ordering problem)
+  if (!world.csmInit) { world.csmInit = true; setShadowRange(world.shadowsOn && GFX.shadowRange === 'far'); }
+  if (HUB) { HUB.shafts.visible = !!GFX.haze; setHubReflections(GFX.reflections === 'scene'); }
   if (pipeline) pipeline.dispose?.();
-  const main = buildPipeline(scene, camera);
+  const main = buildPipeline(scene, camera, { aoRadius: 4.5, aoThickness: 3 });
   pipeline = main.pipe; world.bloom = main.bloom;
   if (world.bloom && toggles.ir) world.bloom.strength.value = 0.9;
-  if (HUB) { HUB.pipe.dispose?.(); HUB.pipe = buildPipeline(HUB.scene, HUB.cam).pipe; }
+  if (HUB) { HUB.pipe.dispose?.(); HUB.pipe = buildPipeline(HUB.scene, HUB.cam, { aoRadius: 2.2, aoThickness: 1.5, flareThreshold: 1.6, flareGain: 0.15 }).pipe; }
   $('perf').hidden = !GFX.meter;
 }
 
