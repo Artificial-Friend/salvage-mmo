@@ -201,13 +201,9 @@ function buildHub() {
   const selRing = new THREE.Mesh(new THREE.TorusGeometry(1, 0.02, 4, 96), new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(0.4, 2.6, 2.2) }));
   selRing.rotation.x = Math.PI / 2; hs.add(selRing);
 
-  const pass2 = pass(hs, cam, world.passOpts);
-  const col = pass2.getTextureNode('output');
-  const bl = bloom(col, 0.45, 0.4, 1.4);
-  const pipe = new THREE.RenderPipeline(renderer);
-  pipe.outputNode = col.add(bl);
+  const pipe = buildPipeline(hs, cam).pipe;
   window.addEventListener('resize', () => { cam.aspect = window.innerWidth / window.innerHeight; cam.updateProjectionMatrix(); });
-  HUB = { scene: hs, cam, pipe, models: [null, null, null, null], built: ['', '', '', ''], selRing, yaw: 0.85, pitch: 0.28, dist: 70, focus: new THREE.Vector3(0, 13, 0), want: new THREE.Vector3(0, 13, 0), wantDist: 64, drag: null, auto: true, idle: 0, pads };
+  HUB = { scene: hs, cam, pipe, key, models: [null, null, null, null], built: ['', '', '', ''], selRing, yaw: 0.85, pitch: 0.28, dist: 70, focus: new THREE.Vector3(0, 13, 0), want: new THREE.Vector3(0, 13, 0), wantDist: 64, drag: null, auto: true, idle: 0, pads };
   bindHubInput();
   syncBays();
 }

@@ -1,7 +1,9 @@
 import * as THREE from 'three/webgpu';
 import {
-  uniform, vec3, float, mix, smoothstep, abs, normalView, uv, pass, time, sin,
+  uniform, vec3, float, mix, smoothstep, abs, normalView, uv, pass, time, sin, renderOutput,
 } from 'three/tsl';
+import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
+import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
@@ -336,7 +338,7 @@ async function initRenderer() {
     renderer._getFallback = (err) => { world.gpuError = err; console.warn('[salvage] WebGPU backend failed, falling back:', err); return fb(err); };
   }
   await renderer.init();
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
+  renderer.setPixelRatio(THREE.MathUtils.clamp(window.devicePixelRatio * GFX.renderScale, 0.5, 2.5));
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.toneMapping = THREE.AgXToneMapping;
   renderer.toneMappingExposure = 1.05;
@@ -353,12 +355,8 @@ async function initRenderer() {
   // WebGPU compatibility mode (OpenGL-backed, common on Linux) can't resolve multisampled passes here
   world.compat = !!(renderer.backend && renderer.backend.compatibilityMode);
   world.passOpts = world.compat || DBG.has('pass0') ? { samples: 0 } : undefined;
-  const sceneP = pass(scene, camera, world.passOpts);
-  const colorNode = sceneP.getTextureNode('output');
-  const bloomP = bloom(colorNode, 0.55, 0.45, 1.25);
-  world.bloom = bloomP;
-  pipeline = new THREE.RenderPipeline(renderer);
-  pipeline.outputNode = colorNode.add(bloomP);
+  const built = buildPipeline(scene, camera);
+  pipeline = built.pipe; world.bloom = built.bloom;
 
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -1211,7 +1209,7 @@ function setIR(on) {
   SUN.visible = !on;
   $('irlegend').hidden = !on;
   $('scan').style.opacity = on ? 1 : 0;
-  world.bloom.strength.value = on ? 0.9 : 0.55;
+  if (world.bloom) world.bloom.strength.value = on ? 0.9 : GFX.bloomStrength;
   msg(on ? 'Passive IR view — colour is temperature' : 'Visual', on ? 's' : '');
 }
 
@@ -1969,7 +1967,9 @@ function frame(now) {
   requestAnimationFrame(frame);
   const t = now / 1000;
   let dt = Math.min(0.1, t - (game.last || t)); game.last = t;
-  if ((game.running || game.over) && game.paused) {
+  if (game.mode === 'bench' && bench.on) {
+    updateBench(dt, t);
+  } else if ((game.running || game.over) && game.paused) {
     syncVisuals(0, t); updateCamera(0);
   } else if (game.running || game.over) {
     const stick = readInput(dt);
@@ -1981,7 +1981,7 @@ function frame(now) {
     syncVisuals(dt, t);
     if (!DBG.has('nocam')) updateCamera(dt);
     if (game.running) { if (!DBG.has('nohud')) updateHUD(dt, stick); updateTactical(); updateContractHud(); updateAudio(); }
-  } else if (world.ready && game.mode !== 'hub') {
+  } else if (world.ready && game.mode !== 'hub' && game.mode !== 'bench') {
     // idle orbit behind the boot screen
     syncVisuals(dt, t);
     const a = t * 0.05;
@@ -1992,15 +1992,8 @@ function frame(now) {
     sunLight.position.set(0, 0, 420).addScaledVector(sunDir, 600); sunLight.target.position.set(0, 0, 420);
   }
   if (world.ready) {
-    // dynamic resolution: hold ~60 fps by trading pixel density
-    const q = world.q || (world.q = { avg: 16, t: 0, pr: Math.min(window.devicePixelRatio, 1.75) });
-    q.avg += (dt * 1000 - q.avg) * 0.05; q.t += dt;
-    if (q.t > 1.5) {
-      q.t = 0;
-      const maxPr = Math.min(window.devicePixelRatio, 1.75);
-      if (q.avg > 24 && q.pr > 0.6) { q.pr = Math.max(0.6, q.pr - 0.15); renderer.setPixelRatio(q.pr); }
-      else if (q.avg < 13 && q.pr < maxPr) { q.pr = Math.min(maxPr, q.pr + 0.1); renderer.setPixelRatio(q.pr); }
-    }
+    updateDynamicRes(dt);
+    updatePerf(dt);
     PLANET.planet.rotation.y += dt * 0.002;
     if (game.mode === 'hub' && HUB) { updateHub(dt); if (world.direct) renderer.render(HUB.scene, HUB.cam); else HUB.pipe.render(); }
     else if (world.direct) renderer.render(scene, camera); else pipeline.render();
@@ -2028,7 +2021,7 @@ async function start() {
 
     sunLight = new THREE.DirectionalLight(new THREE.Color(1, 0.96, 0.9), 3.2);
     sunLight.castShadow = !DBG.has('noshadow');
-    sunLight.shadow.mapSize.set(2048, 2048);
+    sunLight.shadow.mapSize.set(GFX.shadows || 2048, GFX.shadows || 2048);
     const sc = sunLight.shadow.camera; sc.left = -170; sc.right = 170; sc.top = 170; sc.bottom = -170; sc.near = 1; sc.far = 1500;
     sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.6;
     scene.add(sunLight, sunLight.target);
@@ -2074,6 +2067,8 @@ async function start() {
     sel.addEventListener('change', () => { try { localStorage.setItem('salvage.renderer', sel.value); } catch { /* storage unavailable */ } $('rendnote').hidden = false; });
     $('rendreload').addEventListener('click', () => location.reload());
     console.info('[salvage] renderer', world.backend, gd);
+    bindGfxPanel();
+    applyGraphics();
     showHub('hangar');
   } catch (err) {
     console.error(err);
