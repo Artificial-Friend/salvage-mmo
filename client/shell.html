@@ -261,6 +261,36 @@ table.loot td.num { text-align: right; }
   .cards3 { grid-template-columns: 1fr; }
   .cards4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
+
+/* --- Graphics settings ------------------------------------------------- */
+#gfx { background: rgba(4, 7, 10, 0.94); z-index: 30; }
+.gfxsheet { width: min(760px, 100%); }
+.gfxsheet h1 { font-size: clamp(40px, 6vw, 64px); }
+.gfxsheet .card b { text-transform: uppercase; }
+.grows { display: grid; gap: 1px; background: rgba(255,255,255,.06); margin: 6px 0 10px; }
+.grow { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; align-items: center; padding: 10px 12px; background: rgba(6,10,12,.96); }
+.grow.dim { opacity: .45; }
+.gl { display: grid; gap: 3px; min-width: 0; }
+.gl b { font: 600 14px/1.1 var(--f-display); letter-spacing: .06em; text-transform: uppercase; }
+.gl span { color: var(--dim); font-size: 11px; line-height: 1.45; }
+.gc { display: flex; align-items: center; gap: 10px; }
+.gc select { font: 500 12px var(--f-mono); color: var(--ink); background: rgba(6,10,12,.9); border: 1px solid var(--hair); padding: 5px 8px; }
+.gc input[type=range] { width: 160px; accent-color: var(--amber); }
+.gc output { min-width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+.tog { font: 600 12px/1 var(--f-display); letter-spacing: .14em; text-transform: uppercase; min-width: 64px; padding: 7px 10px 6px;
+  background: transparent; color: var(--dim); border: 1px solid rgba(255,255,255,.2); cursor: pointer; }
+.tog.on { color: #120c03; background: var(--amber); border-color: var(--amber); }
+.tog:focus-visible, .gc select:focus-visible, .gc input:focus-visible { outline: 2px solid var(--sensor); outline-offset: 2px; }
+.hubgfx { align-self: center; padding: 8px 14px 7px; font-size: 12px; }
+#perf { position: fixed; z-index: 40; left: 50%; transform: translateX(-50%); top: calc(6px + env(safe-area-inset-top, 0px));
+  background: rgba(4,7,10,.82); border: 1px solid var(--hair); padding: 5px 10px 6px; font: 500 11px/1.4 var(--f-mono); color: var(--ink);
+  text-align: center; pointer-events: none; white-space: nowrap; }
+#perf b { color: var(--sensor); font-weight: 600; }
+#perf span { color: var(--dim); }
+#benchhud { position: fixed; z-index: 40; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  font: 600 14px/1 var(--f-display); letter-spacing: .24em; text-transform: uppercase; color: var(--amber);
+  background: rgba(4,7,10,.7); padding: 10px 16px 9px; pointer-events: none; }
+@media (max-width: 700px) { .grow { grid-template-columns: 1fr; } .gc input[type=range] { width: 100%; } }
 @media (prefers-reduced-motion: reduce) { .blink { animation: none; } }
 </style>
 
@@ -362,6 +392,7 @@ table.loot td.num { text-align: right; }
   <header class="hubbar">
     <div class="brand"><span class="eyebrow">Ostrava Yard · Hangar 4</span><b>Salvage</b></div>
     <div class="wallet">
+      <button type="button" class="ghost hubgfx" id="hubgfx">Graphics</button>
       <span><i>Credits</i><b id="h-cred">¢0</b></span>
       <span><i>Scrap</i><b id="h-scrap">0 t</b></span>
       <span><i>Parts</i><b id="h-parts">0</b></span>
@@ -435,11 +466,23 @@ table.loot td.num { text-align: right; }
     </div>
     <div class="actions">
       <button class="go" id="resume">Resume</button>
+      <button class="ghost" id="pausegfx" type="button">Graphics</button>
       <button class="ghost" id="abandon">Abandon run</button>
       <span class="status">Esc to resume. The run is paused while this is open.</span>
     </div>
   </div>
 </div>
+
+<div id="gfx" class="screen" hidden>
+  <div class="sheet gfxsheet">
+    <div class="eyebrow">Settings</div>
+    <h1>Graphics</h1>
+    <div id="gfxbody"></div>
+    <div class="actions"><button type="button" class="ghost" id="gfxclose">Close</button><span class="status">Esc closes. Settings are saved in this browser.</span></div>
+  </div>
+</div>
+<div id="perf" hidden></div>
+<div id="benchhud" hidden></div>
 
 <div id="result" class="screen" hidden>
   <div class="sheet">
