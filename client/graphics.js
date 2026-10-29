@@ -206,6 +206,7 @@ async function runBenchmark() {
   ];
   bench.curve = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
   bench.look = [e1, e2, a, a, b, b, b];
+  bench.dur = parseFloat(DBG.get('benchdur')) || 20;   // automated tests use a short flight
   bench.on = true; bench.t = 0; bench.frames = []; bench.warm = 1.5;
   $('benchhud').hidden = false;
 }
