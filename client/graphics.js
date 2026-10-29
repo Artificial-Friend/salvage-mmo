@@ -68,14 +68,11 @@ function applyGraphics() {
   const pr = basePixelRatio();
   renderer.setPixelRatio(pr);
   world.q = { avg: 16, t: 0, pr, base: pr };
-  // shadows: change caster state and map size; the map is reallocated on next use
+  // shadows: caster state and map size (the renderer resizes the map on its next shadow pass)
   const size = GFX.shadows | 0;
   for (const light of [sunLight, HUB && HUB.key].filter(Boolean)) {
     light.castShadow = size > 0 && !DBG.has('noshadow');
-    if (size > 0 && light.shadow.mapSize.x !== size) {
-      light.shadow.mapSize.set(size, size);
-      if (light.shadow.map) { light.shadow.map.dispose(); light.shadow.map = null; }
-    }
+    if (size > 0) light.shadow.mapSize.set(size, size);
   }
   if (pipeline) pipeline.dispose?.();
   const main = buildPipeline(scene, camera);
