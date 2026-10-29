@@ -1,7 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
-  uniform, vec3, float, mix, smoothstep, abs, normalView, uv, pass, time, sin, renderOutput,
+  uniform, vec2, vec3, vec4, float, mix, smoothstep, abs, normalView, uv, pass, time, sin, renderOutput,
+  mrt, output, directionToColor, colorToDirection, sample, screenUV,
 } from 'three/tsl';
+import { ao } from 'three/addons/tsl/display/GTAONode.js';
+import { lensflare } from 'three/addons/tsl/display/LensflareNode.js';
+import { film } from 'three/addons/tsl/display/FilmNode.js';
+import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
+import { CSMShadowNode } from 'three/addons/csm/CSMShadowNode.js';
 import { fxaa } from 'three/addons/tsl/display/FXAANode.js';
 import { smaa } from 'three/addons/tsl/display/SMAANode.js';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
@@ -2025,7 +2031,8 @@ async function start() {
     const sc = sunLight.shadow.camera; sc.left = -170; sc.right = 170; sc.top = 170; sc.bottom = -170; sc.near = 1; sc.far = 1500;
     sunLight.shadow.bias = -0.0004; sunLight.shadow.normalBias = 0.6;
     scene.add(sunLight, sunLight.target);
-    hemi = new THREE.HemisphereLight(new THREE.Color(0.5, 0.32, 0.2), new THREE.Color(0.04, 0.05, 0.08), 0.18);
+    // reflected light from the gas giant fills the side away from the sun
+    hemi = new THREE.HemisphereLight(new THREE.Color(0.85, 0.55, 0.32), new THREE.Color(0.03, 0.04, 0.07), 0.32);
     hemi.position.copy(planetDir); scene.add(hemi);
 
     PLANET = buildPlanet(); PLANET.grp.scale.setScalar(7200); scene.add(PLANET.grp);
