@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install LLVM (clang + wasm-ld)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends clang lld
+
+      - run: npm ci
+
+      - name: Build physics core
+        run: npm run build:core
+
+      - name: Check client syntax
+        run: npm run check
+
+      - name: Core tests
+        run: npm test
+
+      - name: Build game page
+        run: npm run build:page
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: salvage-${{ github.sha }}
+          path: dist/index.html
+          retention-days: 30
