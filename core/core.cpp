@@ -194,6 +194,7 @@ static const float P_RCS_WASTE = 0.25e6f;
 static const float P_SPOOL = 6.0e6f;
 static const float P_SOLAR = 0.6e6f;
 static const float LASER_RANGE = 70.f;
+static const float LASER_ABLATION_N = 60.f;     // N     recoil on a loose part in the beam
 static const float LASER_OVERHEAT = 1150.f;
 static const float LASER_RESET = 720.f;
 static const float HARPOON_SPEED = 90.f;
@@ -270,6 +271,96 @@ static V3 wreckSphereWorld(int w, int s, float* radius) {
   V3 lp = v3(W[W_SPH + s * 4], W[W_SPH + s * 4 + 1], W[W_SPH + s * 4 + 2]);
   *radius = W[W_SPH + s * 4 + 3];
   return add(gv(W, W_POS), qrot(gq(W, W_QUAT), lp));
+}
+
+// entry distance into a sphere (0 if starting inside), or -1 on a miss
+static float raySphereEnter(V3 o, V3 d, V3 c, float r) {
+  V3 oc = sub(o, c);
+  float b = dot(oc, d), cc = dot(oc, oc) - r * r;
+  if (cc <= 0.f) return 0.f;
+  float h = b * b - cc;
+  if (h < 0.f || b > 0.f) return -1.f;
+  return -b - fsqrt(h);
+}
+
+// ---------------------------------------------------------------------
+//  Hull sections: the true shape of a hulk, shared with the client's renderer.
+//  Each section is a prism along the wreck's local Z with a rounded-box cross-section
+//  (superellipse, exponent 4): |x/a|^4 + |y/b|^4 = 1, a = r·SEC_A[style], b = r·SEC_B[style],
+//  half-length r·SEC_L[class]. Parts sit on this surface; the laser, line of sight and
+//  collisions all hit it. Mirrored in client/shipkit.js (HULL_SECTION).
+// ---------------------------------------------------------------------
+static const float SEC_A[3] = {0.92f, 0.74f, 0.84f};   // TCN wide and low, ARD tall, BFC boxy
+static const float SEC_B[3] = {0.62f, 0.86f, 0.78f};
+static const float SEC_L[2] = {0.85f, 0.65f};          // ordinary hull, capital section
+static inline float norm4(float x, float y) { float x2 = x * x, y2 = y * y; return fsqrt(fsqrt(x2 * x2 + y2 * y2)); }
+struct Sec { V3 c; float a, b, h; };
+static Sec wreckSection(const float* W, int s) {
+  float r = W[W_SPH + s * 4 + 3];
+  int st = (int)W[W_STYLE]; if (st < 0 || st > 2) st = 0;
+  int cl = W[W_CLASS] > 0.5f ? 1 : 0;
+  Sec S = { v3(W[W_SPH + s * 4], W[W_SPH + s * 4 + 1], W[W_SPH + s * 4 + 2]), r * SEC_A[st], r * SEC_B[st], r * SEC_L[cl] };
+  return S;
+}
+// point on the section's surface along a direction in the cross-section plane, and its outward normal
+static V3 sectionSurface(const Sec& S, float dx, float dy, V3* n) {
+  float k = norm4(dx / S.a, dy / S.b);
+  float x = dx / k, y = dy / k;
+  V3 g = v3(x * x * x / (S.a * S.a * S.a * S.a), y * y * y / (S.b * S.b * S.b * S.b), 0.f);
+  *n = norm(g);
+  return v3(S.c.x + x, S.c.y + y, 0.f);
+}
+// approximate signed distance from a point in wreck-local space to a section (negative inside)
+static float sectionDist(const Sec& S, V3 lp, V3* n) {
+  V3 q = sub(lp, S.c);
+  float rho = fsqrt(q.x * q.x + q.y * q.y);
+  float k = norm4(q.x / S.a, q.y / S.b);
+  float dr; V3 nr;
+  if (rho < 1e-4f) { dr = -fminf_(S.a, S.b); nr = v3(0, 1, 0); }
+  else {
+    dr = rho * (1.f - 1.f / k);
+    V3 g = v3(q.x * q.x * q.x / (S.a * S.a * S.a * S.a), q.y * q.y * q.y / (S.b * S.b * S.b * S.b), 0.f);
+    nr = norm(g);
+  }
+  float dz = fabsf_(q.z) - S.h;
+  V3 nz = v3(0, 0, q.z < 0.f ? -1.f : 1.f);
+  if (dr > 0.f && dz > 0.f) { *n = norm(add(mul(nr, dr), mul(nz, dz))); return fsqrt(dr * dr + dz * dz); }
+  if (dr > dz) { *n = nr; return dr; }
+  *n = nz; return dz;
+}
+// distance in wreck-local space to the union of all sections
+static float localHullDist(const float* W, V3 lp) {
+  float best = 1e9f; int ns = (int)W[W_NS];
+  for (int s = 0; s < ns; s++) { Sec S = wreckSection(W, s); V3 n; float d = sectionDist(S, lp, &n); if (d < best) best = d; }
+  return best;
+}
+// world-space distance to a wreck's hull (all sections); n is the world-space outward normal
+static float wreckDist(int w, V3 p, V3* n, int* sec) {
+  const float* W = &wrecks[w * W_N];
+  Q q = gq(W, W_QUAT);
+  V3 lp = qinvrot(q, sub(p, gv(W, W_POS)));
+  float best = 1e9f; V3 bn = v3(0, 1, 0); int bs = 0;
+  int ns = (int)W[W_NS];
+  for (int s = 0; s < ns; s++) {
+    Sec S = wreckSection(W, s);
+    V3 nn; float d = sectionDist(S, lp, &nn);
+    if (d < best) { best = d; bn = nn; bs = s; }
+  }
+  *n = qrot(q, bn); if (sec) *sec = bs;
+  return best;
+}
+// ray against a wreck's hull by sphere tracing; returns t or -1
+static float rayWreck(int w, V3 o, V3 d, float maxT, int* sec) {
+  const float* W = &wrecks[w * W_N];
+  float t0 = raySphereEnter(o, d, gv(W, W_POS), W[W_BR]);
+  if (t0 < 0.f || t0 > maxT) return -1.f;
+  float t = t0;
+  for (int i = 0; i < 48 && t < maxT; i++) {
+    V3 n; float dist = wreckDist(w, add(o, mul(d, t)), &n, sec);
+    if (dist < 0.03f) return t;
+    t += fmaxf_(dist * 0.85f, 0.02f);
+  }
+  return -1.f;
 }
 
 static int addPart(int type, int wreck, V3 local, Q lq) {
@@ -350,18 +441,29 @@ static void genWreckEx(int w, V3 pos, Q q, float scale, int style, int weaponBia
   W[W_MASS] = massSum;
   for (int k = 0; k < np; k++) {
     int s = (int)(rnd() * ns); if (s >= ns) s = ns - 1;
-    V3 c = v3(W[W_SPH + s * 4], W[W_SPH + s * 4 + 1], W[W_SPH + s * 4 + 2]);
-    float r = W[W_SPH + s * 4 + 3];
-    V3 d = rdir(); d.z *= 0.35f; d = norm(d);
     int type = pickPartType(cls);
     if (k == 0 && weaponBias == 1) type = PT_PDC;
     if (k == 0 && weaponBias == 2) type = PT_MASSDRIVER;
     if (k == 1) type = PT_JUMPCELL;
-    float pr = partRadius(type);
-    float surf = cls == 1 ? r * 0.86f : r * 0.92f;   // capital hulls are drawn slightly inset
-    V3 local = add(c, mul(d, surf + pr * 0.45f));
-    local.z += rrange(-0.45f, 0.45f) * r;
-    addPart(type, w, local, quatFromTo(v3(0, 1, 0), d));
+    // bolted flush to the hull surface, facing out along its normal — on a spot no
+    // neighbouring section covers (sections overlap where they join)
+    V3 n = v3(0, 1, 0), local = v3(0, 0, 0); bool ok = false;
+    for (int tries = 0; tries < 12 && !ok; tries++) {
+      int s2 = tries == 0 ? s : (int)(rnd() * ns); if (s2 >= ns) s2 = ns - 1;
+      Sec S = wreckSection(W, s2);
+      V3 rd = rdir(); if (fabsf_(rd.x) + fabsf_(rd.y) < 0.05f) rd = v3(0, 1, 0);
+      local = sectionSurface(S, rd.x, rd.y, &n);
+      local.z = S.c.z + rrange(-0.7f, 0.7f) * (S.h - partRadius(type) * 0.6f);
+      ok = localHullDist(W, local) > -0.02f;
+      // and clear of the fittings already bolted to this hull
+      for (int j = 0; j < nParts && ok; j++) {
+        const float* Q2 = &parts[j * P_N];
+        if ((int)Q2[P_WRECK] != w) continue;
+        if (len(sub(gv(Q2, P_LOCAL), local)) < (Q2[P_RAD] + partRadius(type)) * 0.8f) ok = false;
+      }
+    }
+    if (!ok) continue;
+    addPart(type, w, local, quatFromTo(v3(0, 1, 0), n));
   }
 }
 
@@ -591,12 +693,9 @@ static Hit raycast(V3 o, V3 d, float maxT, bool partsOnlyFree) {
   for (int w = 0; w < nWrecks; w++) {
     float* W = &wrecks[w * W_N];
     if (len(sub(gv(W, W_POS), o)) - W[W_BR] > h.t) continue;
-    int ns = (int)W[W_NS];
-    for (int s = 0; s < ns; s++) {
-      float r; V3 c = wreckSphereWorld(w, s, &r);
-      float t = raySphere(o, d, c, r * 0.9f);
-      if (t >= 0 && t < h.t) { h.type = 2; h.idx = w; h.sub = s; h.t = t; }
-    }
+    int sec = 0;
+    float t = rayWreck(w, o, d, h.t, &sec);
+    if (t >= 0 && t < h.t) { h.type = 2; h.idx = w; h.sub = sec; h.t = t; }
   }
   for (int i = 0; i < nRocks; i++) {
     float* R = &rocks[i * R_N];
@@ -618,12 +717,8 @@ static bool blockedByWreck(V3 a, V3 b) {
   V3 d = sub(b, a); float L = len(d); if (L < 1e-3f) return false;
   d = mul(d, 1.f / L);
   for (int w = 0; w < nWrecks; w++) {
-    int ns = (int)wrecks[w * W_N + W_NS];
-    for (int s = 0; s < ns; s++) {
-      float r; V3 c = wreckSphereWorld(w, s, &r);
-      float t = raySphere(a, d, c, r * 0.85f);
-      if (t > 0 && t < L) return true;
-    }
+    float t = rayWreck(w, a, d, L, 0);
+    if (t > 0 && t < L) return true;
   }
   return false;
 }
@@ -1195,7 +1290,8 @@ static void updateShip(float dt) {
           emit(E_DETACH, gv(P, P_POS), (float)P[P_TYPE], (float)h.idx);
         }
       } else {
-        sv(P, P_VEL, add(gv(P, P_VEL), mul(d, 40.f * dt * 1000.f / P[P_MASS])));
+        // ablation recoil: a few MW of beam lifts vapour off the surface, ~3·10⁻⁵ N per W
+        sv(P, P_VEL, add(gv(P, P_VEL), mul(d, LASER_ABLATION_N * eff * LASER_MUL * dt / P[P_MASS])));
       }
     } else if (h.type == 4) {
       hurtDrone(h.idx, 22.f * eff * dt);
@@ -1272,15 +1368,12 @@ static void updateShip(float dt) {
   for (int wi = 0; wi < nWrecks; wi++) {
     float* W = &wrecks[wi * W_N];
     if (len(sub(gv(W, W_POS), pos)) > W[W_BR] + SHIP_RADIUS + 5.f) continue;
-    int ns = (int)W[W_NS];
-    for (int s = 0; s < ns; s++) {
-      float r; V3 c = wreckSphereWorld(wi, s, &r);
-      r *= 0.82f;
-      V3 d = sub(pos, c); float dl = len(d);
-      float pen = r + SHIP_RADIUS - dl;
-      if (pen > 0.f && dl > 1e-4f) {
-        V3 n = mul(d, 1.f / dl);
-        V3 rc = qrot(gq(W, W_QUAT), sub(c, gv(W, W_POS)));
+    {
+      // the ship is a sphere of SHIP_RADIUS·0.8 against the true hull shape
+      V3 n; float dist = wreckDist(wi, pos, &n, 0);
+      float pen = SHIP_RADIUS * 0.8f - dist;
+      if (pen > 0.f) {
+        V3 rc = sub(pos, gv(W, W_POS));
         V3 vw = add(gv(W, W_VEL), cross(gv(W, W_ANG), rc));
         V3 rv = sub(gv(ship, S_VEL), vw);
         float vn = dot(rv, n);
@@ -1362,12 +1455,10 @@ static void updateParts(float dt) {
     for (int w = 0; w < nWrecks; w++) {
       float* W = &wrecks[w * W_N];
       if (len(sub(gv(W, W_POS), p)) > W[W_BR] + P[P_RAD]) continue;
-      int ns = (int)W[W_NS];
-      for (int s = 0; s < ns; s++) {
-        float r; V3 c = wreckSphereWorld(w, s, &r); r *= 0.78f;
-        V3 d = sub(p, c); float dl = len(d); float pen = r + P[P_RAD] * 0.6f - dl;
-        if (pen > 0 && dl > 1e-4f) {
-          V3 n = mul(d, 1.f / dl);
+      {
+        V3 n; float dist = wreckDist(w, p, &n, 0);
+        float pen = P[P_RAD] * 0.45f - dist;
+        if (pen > 0) {
           p = add(p, mul(n, pen));
           V3 v = sub(gv(P, P_VEL), gv(W, W_VEL));
           float vn = dot(v, n);
@@ -1499,11 +1590,10 @@ static void updateDrones(float dt) {
     for (int w = 0; w < nWrecks; w++) {
       float* W = &wrecks[w * W_N];
       if (len(sub(gv(W, W_POS), p)) > W[W_BR] + 4.f) continue;
-      int ns = (int)W[W_NS];
-      for (int s = 0; s < ns; s++) {
-        float r; V3 c = wreckSphereWorld(w, s, &r);
-        V3 d = sub(p, c); float dl = len(d); float pen = r * 0.85f + 3.f - dl;
-        if (pen > 0 && dl > 1e-4f) { V3 n = mul(d, 1.f / dl); p = add(p, mul(n, pen)); float vn = dot(v, n); if (vn < 0) v = sub(v, mul(n, vn)); }
+      {
+        V3 n; float dist = wreckDist(w, p, &n, 0);
+        float pen = 4.f - dist;
+        if (pen > 0) { p = add(p, mul(n, pen)); float vn = dot(v, n); if (vn < 0) v = sub(v, mul(n, vn)); }
       }
     }
     sv(D, D_POS, p); sv(D, D_VEL, v);

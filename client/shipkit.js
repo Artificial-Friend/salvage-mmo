@@ -6,6 +6,9 @@
 //  Concatenated after surfaces.js, before ships.js (shared module scope).
 // =====================================================================
 
+// Wreck hull sections — mirror of core/core.cpp SEC_A / SEC_B / SEC_L (and tests/core.test.mjs).
+// Section cross-section: |x/a|^4 + |y/b|^4 = 1 with a = r·A[style], b = r·B[style]; half-length r·L[class].
+const HULL_SECTION = { A: [0.92, 0.74, 0.84], B: [0.62, 0.86, 0.78], L: [0.85, 0.65] };
 const AX_Y = new THREE.Vector3(0, 1, 0);
 const AX_Z = new THREE.Vector3(0, 0, 1);
 
