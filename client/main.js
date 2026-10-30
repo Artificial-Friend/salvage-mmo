@@ -572,69 +572,113 @@ function buildMaterials() {
 // =====================================================================
 //  Salvage parts — one distinct silhouette per function
 // =====================================================================
-// Salvage parts — one distinct silhouette per function. Meshes marked paint take the colours of the
-// navy that built the part (see paintPart); the rest is bare metal and machinery.
+// Salvage parts: real components, one distinct silhouette per function, built with the ship
+// geometry engine. Each stands on a mounting flange at y = 0 (Y is out of the hull, Z along it).
+// Meshes from the 'paint' stream take the colours of the navy that built the part (paintPart).
 function partPrototype(type) {
-  const g = new THREE.Group();
-  const add = (geo, mat, paint = false) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.userData.paint = paint; g.add(m); return m; };
-  const pod = { keel: 0.45, deck: 0.45, lo: -0.45, hi: 0.45, up: 1 };
+  const B = new Batch(0);
+  const X = [0, 0, Math.PI / 2], Q90 = [Math.PI / 2, 0, 0];
+  const flange = (r, h = 0.18) => { B.add('dark', cyl(r, r * 1.04, h, 24), T([0, h / 2, 0])); for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; B.add('metal', cyl(0.06, 0.06, 0.07, 6), T([Math.cos(a) * r * 0.86, h + 0.03, Math.sin(a) * r * 0.86])); } };
   switch (type) {
-    case 0: // armour slab: layered plates with a toothed leading edge
-      add(merge([armorPlateG(3.6, 5.2, 0.45, 0.22), place(armorPlateG(2.8, 4.0, 0.35, 0.3), [0, 0.45, 0.3])]), MAT.tcn, true);
-      add(merge([...[-1.1, 0, 1.1].map((x) => place(spikeG(0.28, 1.3 - Math.abs(x) * 0.25), [x, 0.32, 2.5], [Math.PI / 2, 0, 0])),
-        ...[[-1.4, -2.0], [1.4, -2.0], [-1.4, 2.0], [1.4, 2.0]].map(([x, z]) => place(boxG(0.22, 0.14, 0.22), [x, 0.5, z]))]), MAT.dark);
-      break;
-    case 1: // radiator panel on a boom
-      add(merge([place(boxG(0.4, 2.0, 0.4), [0, 0.9, 0]), place(facetCylG(0.45, 0.55, 0.4, 6), [0, 0.2, 0])]), MAT.metal);
-      add(merge([place(boxG(6.8, 0.1, 3.4), [0, 2.0, 0]), ...[-1.3, -0.45, 0.45, 1.3].map((z) => place(boxG(6.8, 0.2, 0.1), [0, 2.02, z]))]), MAT.partRad);
-      break;
-    case 2: // aux thruster: armoured pod, gimbal ring, bell
-      add(loftUpG([{ z: 0, w: 1.2, h: 1.2 }, { z: 0.3, w: 1.35, h: 1.35 }, { z: 1.45, w: 1.2, h: 1.2 }, { z: 1.8, w: 0.85, h: 0.85 }], pod), MAT.tcn, true);
-      add(merge([place(new THREE.TorusGeometry(0.95, 0.12, 6, 16), [0, 1.95, 0], [Math.PI / 2, 0, 0]), place(boxG(2.9, 0.25, 0.3), [0, 1.0, 0])]), MAT.metal);
-      add(place(bellG(1.2, 2.2), [0, 2.0, 0], [Math.PI, 0, 0]), MAT.bellIn);
-      break;
-    case 3: // point-defense turret: barbette, wedge head, three barrels, a red sensor eye
-      add(facetCylG(1.7, 1.5, 0.6, 10), MAT.dark).position.y = 0.3;
-      add(loftG([{ z: -1.3, w: 1.15, h: 0.55, y: 1.15 }, { z: 0.6, w: 1.2, h: 0.6, y: 1.15 }, { z: 1.45, w: 0.7, h: 0.38, y: 1.1 }], { keel: 0.7, deck: 0.6, lo: -0.2, hi: 0.2, up: 0.95 }), MAT.ard, true);
-      add(merge([...[-0.3, 0, 0.3].map((x) => place(facetCylG(0.12, 0.15, 3.0, 6), [x, 1.12, 2.8], [Math.PI / 2, 0, 0])), place(boxG(1.1, 0.45, 0.7), [0, 1.12, 1.55])]), MAT.metal);
-      add(place(boxG(0.32, 0.18, 0.12), [0.62, 1.42, 1.25]), MAT.red);
-      break;
-    case 4: // coilgun spine — long, unmistakable
-      add(merge([loftG([{ z: -5.6, w: 1.2, h: 0.75, y: 0.95 }, { z: -3.4, w: 1.2, h: 0.75, y: 0.95 }, { z: -2.8, w: 0.8, h: 0.6, y: 0.95 }], { keel: 0.7, deck: 0.6, lo: -0.3, hi: 0.3, up: 0.9 }),
-        place(boxG(1.8, 0.45, 3.2), [0, 0.22, -3.6])]), MAT.tcn, true);
-      add(merge([place(boxG(0.26, 0.42, 10.6), [0.42, 0.95, 0.4]), place(boxG(0.26, 0.42, 10.6), [-0.42, 0.95, 0.4]),
-        loftG([{ z: 5.4, w: 0.75, h: 0.55, y: 0.95 }, { z: 6.2, w: 0.75, h: 0.55, y: 0.95 }, { z: 6.5, w: 0.5, h: 0.4, y: 0.95 }], pod)]), MAT.dark);
-      add(merge([-2.4, -1.2, 0, 1.2, 2.4, 3.6, 4.6].map((z) => loftG([{ z, w: 0.82, h: 0.8, y: 0.95 }, { z: z + 0.28, w: 0.82, h: 0.8, y: 0.95 }], pod))), MAT.metal);
-      add(place(boxG(0.12, 0.12, 9.6), [0, 0.95, 0.5]), MAT.cellGlow);
-      break;
-    case 5: // fusion reactor core: faceted shield in a cage, glowing at the seams
-      add(faceted(new THREE.IcosahedronGeometry(2.1, 1)), MAT.dark).position.y = 2.2;
-      add(loftUpG([{ z: 0, w: 1.6, h: 1.6 }, { z: 0.5, w: 1.3, h: 1.3 }, { z: 0.8, w: 0.9, h: 0.9 }], pod), MAT.ard, true);
-      add(merge([0, 1, 2].map((k) => place(new THREE.TorusGeometry(2.3, 0.1, 6, 24), [0, 2.2, 0], [Math.PI / 2, k * Math.PI / 3, 0]))), MAT.metal);
-      add(merge([0, 1, 2, 3].map((k) => place(new THREE.TorusGeometry(2.12, 0.05, 6, 40), [0, 2.2, 0], [Math.PI / 2, k * Math.PI / 4 + 0.4, 0]))), MAT.reactorGlow);
-      break;
-    case 6: { // sensor mast: faceted mast, tilted phased-array panel, whip antenna
-      add(merge([place(facetCylG(0.3, 0.18, 4.2, 4), [0, 2.1, 0]), place(facetCylG(0.03, 0.03, 2.4, 4), [0.6, 4.8, 0])]), MAT.metal);
-      add(loftUpG([{ z: 0, w: 0.7, h: 0.7 }, { z: 0.6, w: 0.55, h: 0.55 }], pod), MAT.bfc, true);
-      const hex = [0, 1, 2, 3, 4, 5].map((k) => [Math.cos(k * Math.PI / 3) * 1.4, Math.sin(k * Math.PI / 3) * 1.4]);
-      add(place(plateG(hex, 0.16), [0, 4.0, 0.15], [Math.PI / 2 - 0.45, 0, 0]), MAT.glass);
-      add(place(plateG(hex.map(([x, z]) => [x * 1.12, z * 1.12]), 0.12), [0, 3.93, 0.05], [Math.PI / 2 - 0.45, 0, 0]), MAT.dark);
+    case 0: { // composite armour applique: two bevelled layers with a sloped glacis and bolt rows
+      B.add('paint', rbox(3.6, 0.36, 5.2, 0.12), T([0, 0.18, 0]));
+      B.add('paint', rbox(3.0, 0.3, 4.2, 0.12), T([0, 0.5, -0.2]));
+      B.add('paint', rbox(3.0, 0.3, 1.0, 0.12), T([0, 0.42, 2.1], [0.32, 0, 0]));
+      for (const x of [-1.6, 1.6]) for (let k = 0; k < 6; k++) B.add('metal', cyl(0.07, 0.07, 0.06, 6), T([x, 0.38, -2.2 + k * 0.88]));
+      B.add('dark', rbox(3.7, 0.08, 0.14, 0.03), T([0, 0.2, -2.62]));
       break;
     }
-    case 7: // jump cell canister — glowing, small
-      add(merge([place(cylG(0.62, 0.62, 2.2, 16), [0, 1.1, 0]), place(cylG(0.75, 0.75, 0.25, 16), [0, 0.1, 0]), place(cylG(0.75, 0.75, 0.25, 16), [0, 2.1, 0])]), MAT.cell);
-      add(merge([0.6, 1.1, 1.6].map((y) => place(cylG(0.64, 0.64, 0.12, 16), [0, y, 0]))), MAT.cellGlow);
+    case 1: { // radiator: coolant manifold, twin feed booms and a ribbed panel
+      flange(0.55);
+      for (const x of [-0.18, 0.18]) B.add('metal', cyl(0.09, 0.09, 1.9, 8), T([x, 1.1, 0]));
+      B.add('dark', rbox(0.7, 0.32, 0.5, 0.08), T([0, 2.05, 0]));
+      B.add('rad', rbox(6.8, 0.08, 3.4, 0.03), T([0, 2.2, 0]));
+      for (let k = 0; k < 6; k++) B.add('rad', rbox(6.8, 0.16, 0.06, 0.02), T([0, 2.24, -1.45 + k * 0.58]));
+      B.add('dark', rbox(6.9, 0.22, 0.22, 0.06), T([0, 2.22, 1.72]));
       break;
-    case 8: // capacitor bank
-      add(loftUpG([{ z: 0, w: 1.3, h: 1.0 }, { z: 1.6, w: 1.3, h: 1.0 }, { z: 1.9, w: 1.0, h: 0.75 }], { keel: 0.85, deck: 0.85, lo: -0.6, hi: 0.6, up: 1 }), MAT.bfc, true);
-      add(merge([-1, -0.5, 0, 0.5, 1].map((x) => place(boxG(0.1, 1.5, 2.3), [x, 1.0, 0]))), MAT.metal);
-      add(place(boxG(1.6, 0.08, 0.1), [0, 1.92, 1.02]), MAT.cellGlow);
+    }
+    case 2: { // aux thruster: gimbal block, turbopump, feed lines, bell with cooling rings (fires along +Y)
+      B.add('paint', rbox(2.3, 0.9, 2.3, 0.2), T([0, 0.45, 0]));
+      B.add('dark', cyl(0.75, 0.85, 0.7, 20), T([0, 1.25, 0]));
+      B.add('metal', tor(0.82, 0.1, 6, 24), T([0, 1.62, 0], Q90));
+      const pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10; pts.push([1.15 * (0.32 + 0.68 * Math.pow(t, 1.7)) + 0.05, 1.6 + t * 2.1]); }
+      B.add('metal', lathe(pts, 28));
+      for (const f of [0.4, 0.75]) B.add('dark', tor(1.15 * (0.32 + 0.68 * Math.pow(f, 1.7)) + 0.1, 0.06, 6, 28), T([0, 1.6 + f * 2.1, 0], Q90));
+      B.add('bellIn', lathe(pts.map(([r, y]) => [r - 0.07, y]), 28));
+      B.add('metal', pipeRaw([[0.9, 0.9, 0.6], [1.0, 1.3, 0.3], [0.45, 1.7, 0.1]], 0.08, 6));
+      B.add('metal', pipeRaw([[-0.9, 0.9, -0.6], [-1.0, 1.3, -0.3], [-0.45, 1.7, -0.1]], 0.08, 6));
       break;
-    default: // truss
-      add(merge([
-        ...[[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]].map(([x, z]) => place(boxG(0.22, 3.8, 0.22), [x, 1.9, z])),
-        ...[0.2, 1.9, 3.6].flatMap((y) => [place(boxG(2.6, 0.2, 0.2), [0, y, -1.2]), place(boxG(2.6, 0.2, 0.2), [0, y, 1.2]), place(boxG(0.2, 0.2, 2.6), [-1.2, y, 0]), place(boxG(0.2, 0.2, 2.6), [1.2, y, 0])]),
-      ]), MAT.metal);
+    }
+    case 3: { // point-defense cannon: traversing housing, twin barrels in shrouds, ammo chute, sensor eye
+      flange(1.5, 0.3);
+      B.add('dark', cyl(1.2, 1.3, 0.35, 28), T([0, 0.47, 0]));
+      B.add('paint', loftRaw([{ z: -1.2, a: 1.0, b: 0.55, e: 4 }, { z: 0.5, a: 1.05, b: 0.6, e: 4 }, { z: 1.2, a: 0.7, b: 0.42, y: -0.05, e: 3.5 }, { z: 1.45, a: 0.4, b: 0.28, y: -0.08, e: 3 }], 32), T([0, 1.15, 0]));
+      for (const x of [-0.22, 0.22]) {
+        B.add('dark', cyl(0.14, 0.14, 1.0, 12), T([x, 1.1, 1.75], Q90));
+        B.add('metal', cyl(0.07, 0.08, 2.4, 10), T([x, 1.1, 3.0], Q90));
+        B.add('dark', cyl(0.1, 0.1, 0.25, 10), T([x, 1.1, 4.1], Q90));
+      }
+      B.add('dark', rbox(0.4, 0.5, 0.9, 0.08), T([-0.95, 0.95, -0.4], [0, 0, 0.25]));
+      B.add('dark', sph(0.2, 12, 8), T([0.62, 1.55, 0.8]));
+      B.add('red', sph(0.1, 10, 6), T([0.62, 1.55, 0.98]));
+      break;
+    }
+    case 4: { // coilgun: armoured barrel with coil rings, breech capacitors, muzzle brake
+      B.add('paint', rbox(1.7, 1.1, 3.0, 0.2), T([0, 0.75, -4.0]));
+      B.add('dark', rbox(1.2, 0.4, 2.6, 0.1), T([0, 0.2, -4.0]));
+      B.add('paint', rbox(0.8, 0.75, 9.4, 0.18), T([0, 0.95, 1.3]));
+      for (let k = 0; k < 8; k++) B.add('metal', rbox(1.05, 1.0, 0.3, 0.1), T([0, 0.95, -1.9 + k * 0.95]));
+      B.add('dark', rbox(1.0, 0.95, 0.9, 0.15), T([0, 0.95, 6.3]));
+      for (const x of [-0.42, 0.42]) B.add('dark', rbox(0.12, 0.6, 0.6, 0.04), T([x, 0.95, 6.3]));
+      B.add('cellGlow', rbox(0.18, 0.18, 9.0, 0.05), T([0, 1.35, 1.3]));
+      for (const x of [-0.95, 0.95]) B.add('metal', cyl(0.18, 0.18, 2.4, 10), T([x, 0.75, -4.0], Q90));
+      break;
+    }
+    case 5: { // fusion reactor: shielded containment sphere in a cage, glowing seams, coolant loops
+      flange(1.8, 0.35);
+      B.add('paint', cyl(1.4, 1.7, 0.6, 28), T([0, 0.65, 0]));
+      B.add('dark', sph(2.05, 32, 20), T([0, 2.3, 0]));
+      for (let k = 0; k < 3; k++) B.add('metal', tor(2.18, 0.1, 8, 40), T([0, 2.3, 0], [Math.PI / 2, (k * Math.PI) / 3, 0]));
+      B.add('reactorGlow', tor(2.07, 0.035, 6, 48), T([0, 2.3, 0], Q90));
+      B.add('reactorGlow', tor(2.07, 0.035, 6, 48), T([0, 2.3, 0], [0, 0, Math.PI / 2]));
+      for (const a of [0.6, 2.2, 3.8, 5.4]) B.add('metal', pipeRaw([[Math.cos(a) * 1.5, 0.9, Math.sin(a) * 1.5], [Math.cos(a) * 2.25, 1.2, Math.sin(a) * 2.25], [Math.cos(a) * 1.9, 2.3, Math.sin(a) * 1.9]], 0.11, 8));
+      break;
+    }
+    case 6: { // sensor mast: telescoping mast, phased-array face, small dish, whip
+      flange(0.7);
+      B.add('paint', cyl(0.42, 0.5, 1.2, 16), T([0, 0.75, 0]));
+      B.add('metal', cyl(0.24, 0.3, 2.0, 12), T([0, 2.3, 0]));
+      B.add('metal', cyl(0.16, 0.2, 1.0, 10), T([0, 3.75, 0]));
+      B.add('dark', rbox(2.4, 1.6, 0.22, 0.08), T([0, 4.6, 0.25], [-0.25, 0, 0]));
+      B.add('glass', rbox(2.1, 1.35, 0.06, 0.03), T([0, 4.62, 0.38], [-0.25, 0, 0]));
+      B.add('metal', lathe([[0, 0], [0.35, 0.04], [0.7, 0.18], [0.67, 0.2], [0.33, 0.07], [0, 0.03]], 18), T([0.9, 3.6, -0.4], [0.9, 0, -0.4]));
+      B.add('metal', cyl(0.02, 0.02, 2.2, 5), T([-0.7, 5.6, -0.2]));
+      break;
+    }
+    case 7: { // jump cell: pressure canister in a carry frame, field coils glowing blue
+      B.add('cell', cyl(0.6, 0.6, 1.8, 24), T([0, 1.1, 0]));
+      for (const y of [0.2, 2.0]) B.add('cell', sph(0.6, 24, 8, Math.PI / 2), T([0, y, 0], [y < 1 ? Math.PI : 0, 0, 0], [1, 0.35, 1]));
+      for (const y of [0.6, 1.1, 1.6]) B.add('cellGlow', cyl(0.62, 0.62, 0.1, 24), T([0, y, 0]));
+      for (const [x, z] of [[0.68, 0.68], [-0.68, 0.68], [0.68, -0.68], [-0.68, -0.68]]) B.add('dark', rbox(0.1, 2.4, 0.1, 0.03), T([x * 0.95, 1.15, z * 0.95]));
+      for (const y of [0.05, 2.25]) B.add('dark', rbox(1.4, 0.1, 1.4, 0.04), T([0, y, 0]));
+      break;
+    }
+    case 8: { // capacitor bank: rack of cells on bus bars with a fin stack
+      B.add('dark', rbox(2.6, 0.3, 2.0, 0.08), T([0, 0.15, 0]));
+      for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) B.add('paint', cyl(0.26, 0.26, 1.3, 16), T([-0.9 + i * 0.6, 0.95, -0.6 + j * 0.6]));
+      for (let j = 0; j < 3; j++) B.add('metal', rbox(2.4, 0.08, 0.14, 0.02), T([0, 1.65, -0.6 + j * 0.6]));
+      for (let k = 0; k < 7; k++) B.add('metal', rbox(0.05, 1.0, 1.8, 0.02), T([1.45 + k * 0.1, 0.8, 0]));
+      B.add('cellGlow', rbox(0.5, 0.06, 0.06, 0.02), T([-0.6, 1.72, 0.95]));
+      break;
+    }
+    default: // truss section
+      DETAIL.truss(B, [0, 0, 0], [0, 3.8, 0], 2.4, 'metal');
+  }
+  const g = new THREE.Group();
+  for (const [key, geo] of B.geometries()) {
+    const mat = key === 'paint' ? ([MAT.tcn, MAT.tcn, MAT.metal, MAT.ard, MAT.tcn, MAT.ard, MAT.bfc, MAT.cell, MAT.bfc, MAT.metal][type] || MAT.tcn) : key === 'rad' ? MAT.partRad : (MAT[key] || MAT.dark);
+    const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.userData.paint = key === 'paint';
+    g.add(m);
   }
   return g;
 }
@@ -694,6 +738,9 @@ function decalTexture(text, sub, tint) {
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8; return t;
 }
 
+// A hulk: a dead ship drawn on exactly the hull sections the core simulates (HULL_SECTION), so
+// its salvage sits flush and the laser hits what you see. Sections carry the ship they once were —
+// armour panels, dark ports, hatches, RCS, antennas — or are breached open to their frames.
 function buildWreck(wi, names) {
   const o = wi * W.N;
   const seed = wrecks[o + W.SEED] | 0;
@@ -701,184 +748,186 @@ function buildWreck(wi, names) {
   const style = wrecks[o + W.STYLE] | 0;
   const paint = [MAT.tcn, MAT.ard, MAT.bfc][style];
   const ns = wrecks[o + W.NS] | 0;
-  const sph = [];
-  for (let s = 0; s < ns; s++) sph.push({ c: new THREE.Vector3(wrecks[o + W.SPH + s * 4], wrecks[o + W.SPH + s * 4 + 1], wrecks[o + W.SPH + s * 4 + 2]), r: wrecks[o + W.SPH + s * 4 + 3] });
-  const paintG = [], darkG = [], metalG = [], beltG = [];
-  const Y = new THREE.Vector3(0, 1, 0);
-  let decalSpot = null;
   const cap = (wrecks[o + W.CLASS] | 0) === 1;
+  const SA = HULL_SECTION.A[style], SB = HULL_SECTION.B[style], SL = HULL_SECTION.L[cap ? 1 : 0];
+  const sec = [];
+  for (let s = 0; s < ns; s++) {
+    const c = new THREE.Vector3(wrecks[o + W.SPH + s * 4], wrecks[o + W.SPH + s * 4 + 1], wrecks[o + W.SPH + s * 4 + 2]), r = wrecks[o + W.SPH + s * 4 + 3];
+    sec.push({ c, r, a: r * SA, b: r * SB, h: r * SL });
+  }
   const tornBits = wrecks[o + W.TORN] | 0;
   const bowTorn = cap ? (tornBits & 1) !== 0 : rnd() < 0.55;
   const sternTorn = cap && (tornBits & 2) !== 0;
-  const emberG = [];
-  for (let s = 0; s < ns; s++) {
-    const { c, r } = sph[s];
-    const R0 = r * 0.86;
-    const L = cap ? r * 1.3 : r * 1.7;
-    const z0 = c.z - L / 2;
-    const pts = hullProfile(style, r).map((p) => p.add(new THREE.Vector2(c.x, c.y)));
-    const centred = hullProfile(style, r);
+  const gs = cap ? 2.4 : 1;   // detail scale
+  // salvage bolted to this hull: details keep clear of it
+  const keep = [];
+  for (let i = 0; i < core.partCount(); i++) {
+    const po = i * P.N;
+    if ((parts[po + P.WRECK] | 0) !== wi || (parts[po + P.STATE] | 0) !== PS.ATTACHED) continue;
+    keep.push({ p: new THREE.Vector3(parts[po + 3], parts[po + 4], parts[po + 5]), r: parts[po + P.RAD] });
+  }
+  const clear = (p, extra = 1.5) => !keep.some((k) => k.p.distanceTo(p) < k.r + extra);
+  const BB = [new Batch(0), new Batch(1)];
+  const all = (fn) => BB.forEach((B) => fn(B));
+  const embers = [], beacons = [];
+  let decalSpot = null;
+  sec.forEach((S, s) => {
+    const { c, r, a, b, h } = S;
+    const z0 = c.z - h, z1 = c.z + h;
+    const st = (z, k = 1) => ({ z, a: a * k, b: b * k, x: c.x, y: c.y, e: 4 });
+    const tornLo = s === 0 && bowTorn, tornHi = s === ns - 1 && sternTorn;
     const breached = s > 0 && s < ns - 1 && rnd() < (cap ? 0.35 : 0.5);
-    const torn = s === 0 && bowTorn ? R0 * 0.6 : 0;
-    const tornB = s === ns - 1 && sternTorn ? R0 * 0.6 : 0;
+    const hull = new Hull([st(z0, tornLo ? 1 : 0.94), st(z0 + 0.5 * gs), st(z1 - 0.5 * gs), st(z1, tornHi ? 1 : 0.94)], cap ? 96 : 48);
     if (!breached) {
-      const uv = cap ? UVS * 2.6 : UVS;
-      if (tornB) paintG.push(prismG(pts, L, z0, 0, tornB, seed + s, true, uv)); else paintG.push(prismG(pts, L, z0, 0, torn, seed + s, false, uv));
-      if (tornB || torn) for (let k = 0; k < 5; k++) emberG.push(place(boxG(2 + rnd() * 5, 1 + rnd() * 3, 0.6), [c.x + (rnd() - 0.5) * R0 * 1.4, c.y + (rnd() - 0.5) * R0 * 1.0, tornB ? z0 + L - R0 * 0.2 : z0 + R0 * 0.2]));
-      if (!decalSpot || r > decalSpot.r) decalSpot = { c, r, R0, L, s };
-      // armor belts
-      for (let k = 0; k < 2; k++) {
-        const bz = z0 + L * (0.22 + k * 0.5);
-        beltG.push(prismG(hullProfile(style, r * 1.035).map((p) => p.add(new THREE.Vector2(c.x, c.y))), L * 0.08, bz, 0.9));
+      all((B) => B.add('paint', hull.raw(B.lod, [!tornLo, !tornHi])));
+      if (!decalSpot || r > decalSpot.r) decalSpot = { c, r, L: 2 * h };
+      // armour belts
+      for (const f of [0.22, 0.72]) all((B) => B.add('dark', loftRaw([st(z0 + 2 * h * f, 1.02), st(z0 + 2 * h * f + 2 * h * 0.07, 1.02)], B.lod ? 12 : 48)));
+      // torn ends: jagged plates round an open rim, the interior glowing where it still burns
+      for (const [torn, zEnd, dir] of [[tornLo, z0, -1], [tornHi, z1, 1]]) {
+        if (!torn) continue;
+        all((B) => B.add('dark', loftRaw([st(zEnd - dir * 2.5 * gs, 0.9), st(zEnd - dir * 1.0 * gs, 0.9)], B.lod ? 12 : 40), null));
+        for (let k = 0; k < (cap ? 28 : 14); k++) {
+          const ang = rnd() * Math.PI * 2, f = hull.frame(zEnd - dir * 0.3, ang);
+          const len = (1 + rnd() * 3.5) * gs;
+          const m = frameM(f, -0.2 * gs, 0).multiply(T([0, 0, dir * len * 0.4], [dir * (0.3 + rnd() * 0.6), 0, (rnd() - 0.5) * 0.6]));
+          all((B) => B.add(rnd() < 0.6 ? 'paint' : 'dark', rbox((0.8 + rnd() * 2) * gs, 0.25 * gs, len, 0.08 * gs, B.lod), m));
+        }
+        for (let k = 0; k < 6; k++) embers.push([c.x + (rnd() - 0.5) * a * 1.4, c.y + (rnd() - 0.5) * b * 1.4, zEnd - dir * 1.5 * gs, (1 + rnd() * 3) * gs]);
       }
+      // the ship it was: panels, dark ports, hatches, vents, RCS, antennas and sensor blisters
+      const B0 = BB[0];
+      const tryAt = (z, ang, fn, extra) => { const f = hull.frame(z, ang); if (clear(f.o, extra)) fn(f); };
+      const nPanels = cap ? 26 : 7;
+      for (let k = 0; k < nPanels; k++) tryAt(z0 + h * 0.2 + rnd() * h * 1.6, rnd() * Math.PI * 2, (f) => DETAIL.panel(B0, f, (1.4 + rnd() * 1.6) * gs, (2 + rnd() * 2.5) * gs, 0.1 * gs, rnd() < 0.7 ? 'paint' : 'dark'), 2.5 * gs);
+      for (const side of [0.3, Math.PI - 0.3]) {
+        if (rnd() < (cap ? 0.95 : 0.6)) for (let zz = z0 + h * 0.35; zz < z1 - h * 0.35; zz += 5 * gs) tryAt(zz, side, (f) => DETAIL.windows(B0, f, 4, 0.42 * gs, 0.28 * gs, 0.4 * gs, true, rnd() < 0.08 ? 'glow' : 'glass'), 1.6 * gs);
+      }
+      if (rnd() < 0.7) tryAt(c.z + (rnd() - 0.5) * h, rnd() < 0.5 ? 0 : Math.PI, (f) => DETAIL.hatch(B0, f, 1.0 * gs, 1.5 * gs), 2 * gs);
+      if (rnd() < 0.6) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2 + (rnd() - 0.5), (f) => DETAIL.vent(B0, f, 1.6 * gs, 1.1 * gs), 2 * gs);
+      if (rnd() < 0.5) tryAt(c.z + (rnd() - 0.5) * h, Math.PI / 2 + (rnd() - 0.5) * 0.8, (f) => DETAIL.antenna(B0, f, (1.5 + rnd() * 2.5) * gs), 1.5 * gs);
+      if (rnd() < 0.4) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2, (f) => DETAIL.blister(B0, f, 0.7 * gs), 2 * gs);
+      if (s === 0 || s === ns - 1) for (const ang of [0.8, Math.PI - 0.8, -0.8, Math.PI + 0.8]) tryAt(s === 0 ? z0 + 1.2 * gs : z1 - 1.2 * gs, ang, (f) => DETAIL.rcs(B0, f, gs), 1.5 * gs);
+      if (cap) for (const ang of [0.95, Math.PI - 0.95]) for (let zz = z0 + 6; zz < z1 - 6; zz += 14) tryAt(zz, ang, (f) => { const m = frameM(f); B0.add('dark', sph(0.9 * gs * 0.5, 14, 6, Math.PI / 2), m); }, 3);
     } else {
-      // breached: shell broken into bands with gaps, frames exposed, decks visible
+      // breached: the shell is broken into bands; frames, decks and spars show through the gaps
       let z = z0;
-      while (z < z0 + L - 1) {
-        const band = L * (0.15 + rnd() * 0.3);
-        const gap = L * (0.06 + rnd() * 0.14);
-        if (z + band > z0 + L) break;
-        paintG.push(prismG(pts, band, z, 0.93, rnd() < 0.5 ? R0 * 0.25 : 0, seed + s * 7 + Math.floor(z)));
+      while (z < z1 - 1) {
+        const band = 2 * h * (0.15 + rnd() * 0.3), gap = 2 * h * (0.06 + rnd() * 0.14);
+        if (z + band > z1) break;
+        const bz = z;
+        all((B) => B.add('paint', loftRaw([st(bz), st(bz + band)], B.lod ? 12 : 48, [false, false])));
         z += band;
-        for (let f = 0; f < 2; f++) metalG.push(prismG(pts, 0.5, z + gap * (0.25 + f * 0.5), 0.9));
+        for (let f = 0; f < 2; f++) { const fz = z + gap * (0.25 + f * 0.5); all((B) => B.add('metal', loftRaw([st(fz, 0.97), st(fz + 0.5 * gs, 0.97)], B.lod ? 10 : 40, [false, false]))); }
         z += gap;
       }
-      darkG.push(place(boxG(R0 * 1.55, 0.35, L * 0.96), [c.x, c.y - R0 * 0.22, c.z]));
-      darkG.push(place(boxG(R0 * 1.3, 0.35, L * 0.9), [c.x, c.y + R0 * 0.3, c.z]));
-      darkG.push(place(boxG(0.4, R0 * 1.0, L * 0.85), [c.x + R0 * 0.3, c.y, c.z]));
-      if (cap) for (let k = 0; k < 4; k++) emberG.push(place(boxG(1.5 + rnd() * 4, 0.8 + rnd() * 2, 1.5 + rnd() * 4), [c.x + (rnd() - 0.5) * R0, c.y + (rnd() - 0.5) * R0 * 0.8, c.z + (rnd() - 0.5) * L * 0.8]));
+      all((B) => { B.add('dark', rbox(a * 1.7, 0.35 * gs, h * 1.9, 0.1, B.lod), T([c.x, c.y - b * 0.22, c.z])); B.add('dark', rbox(a * 1.5, 0.35 * gs, h * 1.8, 0.1, B.lod), T([c.x, c.y + b * 0.3, c.z])); });
       for (let k = 0; k < 6; k++) {
         const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd() * 3, rnd() * 3, rnd() * 3));
-        metalG.push(place(boxG(0.3, 0.3, R0 * (0.5 + rnd())), [c.x + (rnd() - 0.5) * R0, c.y + (rnd() - 0.5) * R0, c.z + (rnd() - 0.5) * L], q));
+        BB[0].add('metal', rbox(0.3 * gs, 0.3 * gs, r * (0.5 + rnd()), 0.05), T([c.x + (rnd() - 0.5) * a, c.y + (rnd() - 0.5) * b, c.z + (rnd() - 0.5) * h * 2], q));
       }
+      if (cap) for (let k = 0; k < 4; k++) embers.push([c.x + (rnd() - 0.5) * a, c.y + (rnd() - 0.5) * b * 0.8, c.z + (rnd() - 0.5) * h * 1.6, (1.5 + rnd() * 3) * gs]);
     }
-    // greebles along the skin
-    const gk = cap ? 70 : 16, gs = cap ? 2.4 : 1;
-    for (let k = 0; k < gk; k++) {
-      const { p, n } = perimeterSample(centred, rnd());
-      const z = z0 + L * (0.08 + rnd() * 0.84);
-      const q = alignQ(Y, new THREE.Vector3(n.x, n.y, 0));
-      const w = (0.8 + rnd() * 3.5) * gs, h = (0.25 + rnd() * 1.1) * gs, d = (1 + rnd() * 5) * gs;
-      (rnd() < 0.55 ? darkG : metalG).push(place(boxG(w, h, d), [c.x + p.x + n.x * h * 0.4, c.y + p.y + n.y * h * 0.4, z], q));
-    }
-    // dead turret barbettes (decor) on top
-    if (!cap && rnd() < 0.5 && !breached) {
-      const top = r * HULL_SECTION.B[style];
-      const tz = z0 + L * (0.3 + rnd() * 0.4);
-      darkG.push(place(cylG(R0 * 0.22, R0 * 0.26, 1.4, 18), [c.x, c.y + top + 0.6, tz]));
-      const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.15 - rnd() * 0.3, (rnd() - 0.5) * 1.2, 0));
-      metalG.push(place(cylG(0.32, 0.4, R0 * 0.9, 10), [c.x, c.y + top + 1.6, tz + R0 * 0.4], tilt));
-    }
-    // connector to the next section
+    // a structural collar to the next section
     if (s < ns - 1) {
-      const nx = sph[s + 1];
-      const a = new THREE.Vector3(c.x, c.y, c.z + L / 2), b = new THREE.Vector3(nx.c.x, nx.c.y, nx.c.z - nx.r * 0.85);
-      const dir = b.clone().sub(a); const dl = dir.length();
-      if (dl > 0.5) {
-        const mid = a.clone().add(b).multiplyScalar(0.5);
-        const rr = Math.min(r, nx.r) * 0.45;
-        metalG.push(place(cylG(rr, rr, dl + 2, 14), [mid.x, mid.y, mid.z], alignQ(Y, dir)));
-        for (const sx of [-1, 1]) metalG.push(place(boxG(rr * 0.25, rr * 0.25, dl + 2), [mid.x + sx * rr * 1.2, mid.y, mid.z], alignQ(new THREE.Vector3(0, 0, 1), dir)));
-      }
+      const N2 = sec[s + 1];
+      const A0 = new THREE.Vector3(c.x, c.y, z1 - 1), A1 = new THREE.Vector3(N2.c.x, N2.c.y, N2.c.z - N2.h + 1);
+      const d = A1.clone().sub(A0);
+      if (d.length() > 0.5) { const rr = Math.min(a, b, N2.a, N2.b) * 0.55; all((B) => B.add('metal', cyl(rr, rr, d.length(), B.lod ? 10 : 28), T(A0.clone().add(A1).multiplyScalar(0.5).toArray(), new THREE.Quaternion().setFromUnitVectors(AX_Y, d.normalize())))); }
+    }
+  });
+  const first = sec[0], last = sec[ns - 1];
+  // bow: a tapered nose with a sensor mast, when it is still there
+  if (!bowTorn) {
+    const z0 = first.c.z - first.h;
+    const nose = new Hull([{ z: z0 - first.r * 0.55, a: first.a * 0.14, b: first.b * 0.12, x: first.c.x, y: first.c.y - first.b * 0.1, e: 3 },
+      { z: z0 - first.r * 0.32, a: first.a * 0.62, b: first.b * 0.55, x: first.c.x, y: first.c.y - first.b * 0.05, e: 3.6 }, { z: z0 + 0.2, a: first.a * 0.94, b: first.b * 0.94, x: first.c.x, y: first.c.y, e: 4 }], cap ? 64 : 40);
+    all((B) => B.add('paint', nose.raw(B.lod)));
+    all((B) => B.add('metal', cyl(0.4 * gs, 0.6 * gs, first.r * 0.4, 10), T([first.c.x, first.c.y - first.b * 0.1, z0 - first.r * 0.68], [Math.PI / 2, 0, 0])));
+    if (!cap) DETAIL.windows(BB[0], nose.frame(z0 - first.r * 0.2, Math.PI / 2 - 0.25), 5, 0.4, 0.3, 0.12, false, 'glass');
+  }
+  // stern: the engine block and its bells
+  if (!sternTorn) {
+    const z1 = last.c.z + last.h;
+    all((B) => B.add('dark', loftRaw([{ z: z1 - 0.2, a: last.a * 0.85, b: last.b * 0.85, x: last.c.x, y: last.c.y, e: 4 }, { z: z1 + last.r * 0.3, a: last.a * 0.75, b: last.b * 0.75, x: last.c.x, y: last.c.y, e: 4 }], B.lod ? 12 : 48)));
+    const eng = cap ? 4 : 2 + Math.floor(rnd() * 3);
+    for (let k = 0; k < eng; k++) {
+      if (!cap && rnd() < 0.25) continue;
+      const ang = (k / eng) * Math.PI * 2 + 0.4;
+      const off = eng === 1 ? [0, 0] : [Math.cos(ang) * last.a * 0.42, Math.sin(ang) * last.b * 0.38];
+      all((B) => B.within(T([last.c.x + off[0], last.c.y + off[1], z1 + last.r * 0.3], [0, Math.PI, 0]), () => DETAIL.bell(B, [0, 0, 0], last.r * 0.26, last.r * 0.7)));
     }
   }
-  const first = sph[0], last = sph[ns - 1];
   // bridge tower on the second section
   if (ns > 2 && !cap) {
-    const s1 = sph[1]; const top = s1.r * HULL_SECTION.B[style];
-    paintG.push(place(boxG(s1.r * 0.5, s1.r * 0.35, s1.r * 0.7), [s1.c.x, s1.c.y + top + s1.r * 0.17, s1.c.z]));
-    darkG.push(place(boxG(s1.r * 0.52, s1.r * 0.08, s1.r * 0.2), [s1.c.x, s1.c.y + top + s1.r * 0.25, s1.c.z - s1.r * 0.3]));
-  }
-  // bow: sensor mast & dish when intact
-  if (!bowTorn) {
-    metalG.push(place(cylG(0.4, 0.6, first.r * 0.9, 10), [first.c.x, first.c.y, first.c.z - first.r * 1.25], [Math.PI / 2, 0, 0]));
-    metalG.push(place(new THREE.SphereGeometry(first.r * 0.22, 20, 8, 0, Math.PI * 2, 0, 1.0), [first.c.x, first.c.y + first.r * 0.4, first.c.z - first.r * 0.9], [-0.6, 0, 0]));
-  }
-  // stern: engine block
-  const eng = sternTorn ? 0 : (cap ? 4 : 2 + Math.floor(rnd() * 3));
-  const sternZ = last.c.z + last.r * 0.85;
-  if (!sternTorn) darkG.push(prismG(hullProfile(style, last.r * 0.8).map((p) => p.add(new THREE.Vector2(last.c.x, last.c.y))), last.r * 0.35, sternZ));
-  for (let k = 0; k < eng; k++) {
-    if (!cap && rnd() < 0.25) continue;
-    const a = (k / eng) * Math.PI * 2 + 0.4;
-    const off = eng === 1 ? [0, 0] : [Math.cos(a) * last.r * 0.38, Math.sin(a) * last.r * 0.3];
-    metalG.push(place(bellG(last.r * 0.26, last.r * 0.7), [last.c.x + off[0], last.c.y + off[1], sternZ + last.r * 0.35], [-Math.PI / 2, 0, 0]));
+    const S1 = sec[1], top = S1.c.y + S1.b;
+    const tw = new Hull([{ z: S1.c.z - S1.r * 0.4, a: S1.a * 0.32, b: S1.r * 0.12, y: top + S1.r * 0.1, e: 6 }, { z: S1.c.z + S1.r * 0.25, a: S1.a * 0.32, b: S1.r * 0.12, y: top + S1.r * 0.1, e: 6 },
+      { z: S1.c.z + S1.r * 0.38, a: S1.a * 0.22, b: S1.r * 0.06, y: top + S1.r * 0.06, e: 5 }], 32);
+    all((B) => B.add('paint', tw.raw(B.lod)));
+    DETAIL.windows(BB[0], tw.frame(S1.c.z + S1.r * 0.3, Math.PI / 2 - 0.4), 6, 0.45, 0.3, 0.12, false, 'glass');
   }
   // broken radiator wings
   for (let k = 0; k < 2; k++) {
     if (rnd() < 0.35) continue;
-    const s = sph[Math.min(ns - 1, 1 + Math.floor(rnd() * (ns - 1)))];
-    const side = k === 0 ? 1 : -1;
-    const span = s.r * (1.2 + rnd() * 1.4);
-    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.5, 0, side * (rnd() - 0.3) * 0.8));
-    const g = merge([place(boxG(span, 0.18, s.r * 0.9), [side * span / 2, 0, 0]), ...[0.3, 0.6, 0.9].map((f) => place(boxG(0.4, 0.4, s.r * 0.95), [side * span * f, 0.1, 0]))]);
-    g.applyQuaternion(q); g.translate(s.c.x + side * s.r * 0.8, s.c.y, s.c.z);
-    metalG.push(g);
+    const S = sec[Math.min(ns - 1, 1 + Math.floor(rnd() * (ns - 1)))], side = k === 0 ? 1 : -1;
+    const span = S.r * (cap ? 2.0 + rnd() * 1.6 : 1.2 + rnd() * 1.4);
+    const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.4, 0, side * (rnd() < 0.5 ? -0.6 - rnd() * 0.6 : (rnd() - 0.5) * 0.2)));
+    const root = [S.c.x + side * S.a * 0.95, S.c.y, S.c.z + (rnd() - 0.5) * S.h];
+    all((B) => B.within(T(root, q), () => { B.add('rad', rbox(span, 0.14 * gs, S.r * 0.8, 0.05, B.lod), T([side * span / 2, 0, 0])); if (!B.lod) for (const f of [0.3, 0.6, 0.9]) B.add('metal', rbox(0.35 * gs, 0.35 * gs, S.r * 0.85, 0.06), T([side * span * f, 0.15 * gs, 0])); }));
   }
   if (cap) {
-    const top = (sp) => sp.r * HULL_SECTION.B[style];
     // main battery: heavy turrets far too big to move — scenery, and a reminder of scale
-    for (let s = 0; s < ns; s++) {
-      const sp = sph[s]; if (s === 0 && bowTorn) continue; if (s === ns - 1 && sternTorn) continue;
-      if (s % 2 === 1 || ns < 4) {
-        for (const side of [1, -1]) {
-          const y = sp.c.y + side * top(sp);
-          const R1 = sp.r * 0.2;
-          darkG.push(place(cylG(R1, R1 * 1.15, 4, 24), [sp.c.x, y + side * 2, sp.c.z]));
-          paintG.push(place(boxG(R1 * 1.4, R1 * 0.6, R1 * 1.8), [sp.c.x, y + side * (4 + R1 * 0.3), sp.c.z]));
-          const ry = (rnd() - 0.5) * 1.6, el = side * (0.05 + rnd() * 0.25);
-          for (const bx of [-0.35, 0, 0.35]) {
-            const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 - el, ry, 0));
-            metalG.push(place(cylG(R1 * 0.09, R1 * 0.12, sp.r * 1.1, 12), [sp.c.x + bx * R1 + Math.sin(ry) * sp.r * 0.5, y + side * (4 + R1 * 0.3), sp.c.z + Math.cos(ry) * sp.r * 0.55], bq));
-          }
+    sec.forEach((S, s) => {
+      if ((s === 0 && bowTorn) || (s === ns - 1 && sternTorn) || !(s % 2 === 1 || ns < 4)) return;
+      for (const side of [1, -1]) {
+        const y = S.c.y + side * S.b, R1 = S.r * 0.2;
+        all((B) => {
+          B.add('dark', cyl(R1, R1 * 1.15, 4, B.lod ? 12 : 32), T([S.c.x, y + side * 2, S.c.z]));
+          B.add('paint', loftRaw([{ z: S.c.z - R1 * 0.9, a: R1 * 0.75, b: R1 * 0.32, e: 6 }, { z: S.c.z + R1 * 0.6, a: R1 * 0.75, b: R1 * 0.32, e: 6 }, { z: S.c.z + R1 * 0.95, a: R1 * 0.45, b: R1 * 0.2, e: 5 }], B.lod ? 10 : 32), T([S.c.x, y + side * (4 + R1 * 0.3), 0]));
+        });
+        const ry = (rnd() - 0.5) * 1.6, el = side * (0.05 + rnd() * 0.25);
+        for (const bx of [-0.35, 0, 0.35]) {
+          const bq = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 - el, ry, 0));
+          all((B) => B.add('metal', cyl(R1 * 0.09, R1 * 0.12, S.r * 1.1, B.lod ? 8 : 16), T([S.c.x + bx * R1 + Math.sin(ry) * S.r * 0.5, y + side * (4 + R1 * 0.3), S.c.z + Math.cos(ry) * S.r * 0.55], bq)));
         }
       }
-    }
-    // spinal gun along the keel of the bow section, muzzle out past the bow
+    });
     if (sternTorn) {
-      const zA = first.c.z - first.r * 2.2, zB = last.c.z;
-      const rr = first.r * 0.11;
-      metalG.push(place(cylG(rr, rr, zB - zA, 18), [first.c.x, first.c.y - first.r * 0.15, (zA + zB) / 2], [Math.PI / 2, 0, 0]));
-      for (let k = 0; k < 6; k++) metalG.push(place(new THREE.TorusGeometry(rr * 1.35, rr * 0.3, 8, 24), [first.c.x, first.c.y - first.r * 0.15, zA + 8 + k * 14]));
-      // command superstructure
-      const s1 = sph[Math.min(1, ns - 1)];
-      paintG.push(place(boxG(s1.r * 0.45, s1.r * 0.55, s1.r * 0.9), [s1.c.x, s1.c.y + top(s1) + s1.r * 0.27, s1.c.z]));
-      darkG.push(place(boxG(s1.r * 0.47, s1.r * 0.07, s1.r * 0.3), [s1.c.x, s1.c.y + top(s1) + s1.r * 0.42, s1.c.z - s1.r * 0.38]));
-      metalG.push(place(cylG(0.8, 1.2, s1.r * 0.9, 8), [s1.c.x, s1.c.y + top(s1) + s1.r * 0.95, s1.c.z]));
+      // spinal gun along the keel of the bow section, muzzle out past the bow; the command tower
+      const zA = first.c.z - first.r * 2.2, zB = last.c.z, rr = first.r * 0.11;
+      all((B) => B.add('metal', cyl(rr, rr, zB - zA, B.lod ? 12 : 32), T([first.c.x, first.c.y - first.b * 0.2, (zA + zB) / 2], [Math.PI / 2, 0, 0])));
+      for (let k = 0; k < 6; k++) all((B) => B.add('dark', cyl(rr * 1.4, rr * 1.4, rr * 0.6, B.lod ? 12 : 32), T([first.c.x, first.c.y - first.b * 0.2, zA + 8 + k * 14], [Math.PI / 2, 0, 0])));
+      const S1 = sec[Math.min(1, ns - 1)], top = S1.c.y + S1.b;
+      const tw = new Hull([{ z: S1.c.z - S1.r * 0.45, a: S1.r * 0.22, b: S1.r * 0.27, y: top + S1.r * 0.25, e: 6 }, { z: S1.c.z + S1.r * 0.35, a: S1.r * 0.22, b: S1.r * 0.27, y: top + S1.r * 0.25, e: 6 },
+        { z: S1.c.z + S1.r * 0.45, a: S1.r * 0.15, b: S1.r * 0.15, y: top + S1.r * 0.2, e: 5 }], 40);
+      all((B) => B.add('paint', tw.raw(B.lod)));
+      DETAIL.windows(BB[0], tw.frame(S1.c.z + S1.r * 0.4, Math.PI / 2 - 0.5), 8, 1.2, 0.7, 0.3, false, 'glass');
+      all((B) => B.add('metal', cyl(0.8, 1.2, S1.r * 0.9, 10), T([S1.c.x, top + S1.r * 0.95, S1.c.z])));
     }
-    // great radiator wings, some snapped and hanging
-    for (let k = 0; k < 4; k++) {
-      const sp = sph[Math.min(ns - 1, 1 + Math.floor(rnd() * (ns - 1)))];
-      const side = k % 2 === 0 ? 1 : -1;
-      const span = sp.r * (2.0 + rnd() * 1.6);
-      const snapped = rnd() < 0.5;
-      const q = new THREE.Quaternion().setFromEuler(new THREE.Euler((rnd() - 0.5) * 0.3, 0, side * (snapped ? -0.6 - rnd() * 0.6 : (rnd() - 0.5) * 0.2)));
-      const g = merge([place(boxG(span, 0.5, sp.r * 0.9), [side * span / 2, 0, 0]), ...[0.25, 0.5, 0.75, 1.0].map((f) => place(boxG(1.2, 1.2, sp.r * 0.95), [side * span * f, 0.3, 0]))]);
-      g.applyQuaternion(q); g.translate(sp.c.x + side * sp.r * 0.85, sp.c.y, sp.c.z + (rnd() - 0.5) * sp.r);
-      metalG.push(g);
-    }
-  }
-  const beaconG = [];
-  if (cap) {
     for (let k = 0; k < 18; k++) {
-      const sp = sph[Math.floor(rnd() * ns)];
-      const { p, n } = perimeterSample(hullProfile(style, sp.r), rnd());
-      beaconG.push(place(new THREE.SphereGeometry(0.9, 8, 6), [sp.c.x + p.x + n.x * 1.2, sp.c.y + p.y + n.y * 1.2, sp.c.z + (rnd() - 0.5) * sp.r * 1.2]));
+      const S = sec[Math.floor(rnd() * ns)], f = new Hull([{ z: S.c.z - S.h, a: S.a, b: S.b, x: S.c.x, y: S.c.y, e: 4 }, { z: S.c.z + S.h, a: S.a, b: S.b, x: S.c.x, y: S.c.y, e: 4 }]).frame(S.c.z + (rnd() - 0.5) * S.h * 1.6, rnd() * Math.PI * 2);
+      beacons.push(f.o.clone().addScaledVector(f.n, 0.6));
     }
   }
   const grp = new THREE.Group();
-  if (beaconG.length) {
+  const lod = new THREE.LOD();
+  BB.forEach((B, lv) => {
+    const lg = new THREE.Group();
+    for (const [key, geo] of B.geometries()) {
+      const mat = key === 'paint' ? paint : key === 'rad' ? MAT.partRad : (MAT[key] || MAT.dark);
+      const m = new THREE.Mesh(geo, mat); m.castShadow = key !== 'glow' && key !== 'glass'; m.receiveShadow = true; m.userData.ir = IRM.cold; lg.add(m);
+    }
+    lod.addLevel(lg, lv === 0 ? 0 : (cap ? 1400 : 420));
+  });
+  grp.add(lod);
+  if (beacons.length) {
     MAT.beacon = MAT.beacon || new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(0, 0, 0) });
-    const bm = new THREE.Mesh(merge(beaconG), MAT.beacon); bm.userData.ir = IRM.cold; grp.add(bm);
+    const bm = new THREE.Mesh(merge(beacons.map((p) => place(new THREE.SphereGeometry(0.9, 8, 6), p.toArray()))), MAT.beacon); bm.userData.ir = IRM.cold; grp.add(bm);
   }
-  if (emberG.length) {
+  if (embers.length) {
     MAT.ember = MAT.ember || new THREE.MeshStandardMaterial({ color: '#120804', emissive: new THREE.Color(1.6, 0.42, 0.08), roughness: 0.9 });
     IRM.ember = IRM.ember || irMaterial(0.55).mat;
-    const em = new THREE.Mesh(merge(emberG), MAT.ember); em.userData.ir = IRM.ember; grp.add(em);
-  }
-  for (const [list, mat] of [[paintG, paint], [darkG, MAT.dark], [metalG, MAT.metal], [beltG, MAT.dark]]) {
-    if (!list.length) continue;
-    const m = new THREE.Mesh(merge(list), mat); m.castShadow = true; m.receiveShadow = true; m.userData.ir = IRM.cold; grp.add(m);
+    const em = new THREE.Mesh(merge(embers.map(([x, y, z, sz]) => place(boxG(sz, sz * 0.5, sz * 0.4), [x, y, z], [rnd() * 3, rnd() * 3, 0]))), MAT.ember); em.userData.ir = IRM.ember; grp.add(em);
   }
   const fac = FACTIONS[style];
   const cls = HULL_CLASSES[Math.floor(rnd() * HULL_CLASSES.length)];
@@ -890,9 +939,8 @@ function buildWreck(wi, names) {
     const tint = style === 2 ? '#e9c25a' : '#d9d4c4';
     const tex = decalTexture(cap ? 'ARD-0001' : number, cap ? 'HALVARD' : hullName.toUpperCase(), tint);
     const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.75, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
-    const { c, R0, L } = decalSpot;
-    const halfW = decalSpot.r * HULL_SECTION.A[style];
-    const hgt = decalSpot.r * HULL_SECTION.B[style];
+    const { c, L } = decalSpot;
+    const halfW = decalSpot.r * SA, hgt = decalSpot.r * SB;
     for (const side of [1, -1]) {
       const pl = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.8, L * 0.2), mat);
       pl.position.set(c.x + side * (halfW + 0.06), c.y + hgt * 0.05, c.z);
@@ -945,63 +993,61 @@ function buildDrone() {
 function buildScav() {
   const rnd = mulberry((Math.random() * 1e9) | 0);
   const g = new THREE.Group();
-  const sec = { keel: 0.45, deck: 0.5, lo: -0.25, hi: 0.3, up: 0.85 };
-  const core0 = loftG([{ z: -6.4, w: 2.2, h: 1.5 }, { z: -5.0, w: 2.6, h: 1.7 }, { z: 3.0, w: 2.6, h: 1.7 }, { z: 6.0, w: 1.7, h: 1.2, y: -0.15 }, { z: 8.4, w: 0.7, h: 0.5, y: -0.35 }], sec);
-  const hull = new THREE.Mesh(merge([core0, place(boxG(3.5, 1.2, 4), [0, 1.9, 1.5])]), MAT.scav);
-  const probe = hullProbe([hull]);
-  const byF = [[], [], []], dark = [], metal = [];
-  // scrap plating, welded wherever it fits
-  for (let k = 0; k < 22; k++) {
-    const a = rnd() * Math.PI * 2, z = -5.5 + rnd() * 12;
-    const n = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
-    const hit = probe(new THREE.Vector3(0, 0, z), n, 8); if (!hit) continue;
-    const pg = armorPlateG(1.0 + rnd() * 2.2, 1.4 + rnd() * 2.8, 0.14 + rnd() * 0.16, 0.1 + rnd() * 0.3, 1.0, rnd);
-    pg.rotateY((rnd() - 0.5) * 1.2).rotateX((rnd() - 0.5) * 0.3).rotateZ((rnd() - 0.5) * 0.3);
-    byF[Math.floor(rnd() * 3)].push(atMount(pg, hit.p.toArray(), hit.n.toArray(), -0.05));
+  const B = new Batch(0);
+  const F = ['tcn', 'ard', 'bfc'], pickF = () => F[Math.floor(rnd() * 3)];
+  // a stolen crew module, stretched over a box keel
+  const core = new Hull([{ z: -6.4, a: 2.0, b: 1.5, e: 4.5 }, { z: -5.4, a: 2.4, b: 1.75, e: 5 }, { z: 2.6, a: 2.4, b: 1.75, e: 5 }, { z: 5.4, a: 1.8, b: 1.3, y: -0.15, e: 4.4 }, { z: 7.2, a: 1.0, b: 0.7, y: -0.35, e: 3.6 }], 40);
+  B.add('scav', core.raw(0));
+  B.add('dark', rbox(2.2, 0.6, 9, 0.15), T([0, -1.75, -1.2]));
+  // the ram: armour plates torn from three navies, welded into a wedge, bristling with spikes
+  for (let k = 0; k < 9; k++) {
+    const z = 5.6 + rnd() * 3.2, x = (rnd() - 0.5) * 2.6, y = (rnd() - 0.6) * 1.8;
+    B.add(pickF(), rbox(1.2 + rnd() * 1.4, 0.18 + rnd() * 0.14, 1.6 + rnd() * 1.8, 0.06), T([x, y, z], [-0.6 + rnd() * 0.3, (rnd() - 0.5) * 0.9, (rnd() - 0.5) * 1.2]));
   }
-  // spikes raking forward off the bow and along the dorsal ridge
-  for (let k = 0; k < 16; k++) {
-    const a = rnd() * Math.PI * 2, z = k < 9 ? 2 + rnd() * 6 : -5 + rnd() * 7;
-    const n = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
-    const hit = probe(new THREE.Vector3(0, 0, z), n, 8); if (!hit) continue;
-    const dir = hit.n.clone().multiplyScalar(0.55).add(new THREE.Vector3(0, 0, k < 9 ? 1 : 0.35)).normalize();
-    const sp = spikeG(0.14 + rnd() * 0.16, 1.2 + rnd() * (k < 9 ? 2.6 : 1.6), 4);
-    sp.applyQuaternion(alignQ(new THREE.Vector3(0, 1, 0), dir)); sp.translate(hit.p.x, hit.p.y, hit.p.z);
-    dark.push(sp);
+  for (let k = 0; k < 14; k++) {
+    const a = rnd() * Math.PI * 2, z = k < 9 ? 6 + rnd() * 3 : -5 + rnd() * 8;
+    const fr0 = core.frame(Math.min(7, z), a);
+    const dir = fr0.n.clone().multiplyScalar(k < 9 ? 0.4 : 0.9).add(new THREE.Vector3(0, 0, k < 9 ? 1 : 0.3)).normalize();
+    const len = k < 9 ? 1.6 + rnd() * 2.8 : 0.9 + rnd() * 1.6;
+    B.add('dark', rawFlat(new THREE.ConeGeometry(0.16 + rnd() * 0.14, len, 5, 1).translate(0, len / 2, 0)), T(fr0.o.toArray(), new THREE.Quaternion().setFromUnitVectors(AX_Y, dir)));
   }
-  // hook claws, one longer than the other
-  for (const [sx, len] of [[1, 1], [-1, 1.35]]) {
-    dark.push(loftG([{ z: 5.0, x: 1.5 * sx, y: -0.9, w: 0.5, h: 0.6 }, { z: 8.0 * len, x: 1.5 * sx, y: -1.1, w: 0.36, h: 0.42 },
-      { z: 9.8 * len, x: 1.0 * sx, y: -0.8, w: 0.18, h: 0.22 }, { z: 10.6 * len, x: 0.4 * sx, y: -0.45, w: 0.03, h: 0.03 }], { keel: 0.4, deck: 0.4, lo: -0.3, hi: 0.3, up: 0.9 }));
+  // grab hooks on crude arms, one longer than the other
+  for (const [sx, len] of [[1, 1], [-1, 1.3]]) {
+    const sh = [1.6 * sx, -1.0, 4.4], el = [1.7 * sx, -1.4, 4.4 + 3.2 * len], tip = [0.6 * sx, -0.9, 4.4 + 5.0 * len];
+    B.add('metal', pipeRaw([sh, el, tip], 0.2, 8));
+    B.add('dark', rawFlat(new THREE.ConeGeometry(0.22, 1.4, 4, 1).translate(0, 0.7, 0)), T(tip, [0.4, 0, -sx * 1.2]));
   }
-  // open drive frame
-  for (const sx of [1, -1]) {
-    metal.push(place(bellG(1.4, 2.6), [2.8 * sx, 0, -6.6], [Math.PI / 2, 0, 0]));
-    for (const sy of [1, -1]) metal.push(strutG([1.8 * sx, 1.1 * sy, -5.6], [2.8 * sx, 0.9 * sy, -6.7], 0.22));
-    dark.push(loftG([{ z: -6.9, w: 1.05, h: 1.05, x: 2.8 * sx }, { z: -6.2, w: 1.15, h: 1.15, x: 2.8 * sx }], { keel: 0.45, deck: 0.45, lo: -0.45, hi: 0.45, up: 1 }));
-  }
-  // a snapped radiator wing, still bolted on
-  const wing = merge([place(boxG(6, 0.12, 2.6), [3, 0, 0]), ...[0.8, 2.4, 4.0, 5.4].map((x) => place(boxG(0.3, 0.3, 2.7), [x, 0.1, 0]))]);
-  wing.rotateZ(-0.5).rotateY(0.2); wing.translate(2.2, 1.0, -2.5); metal.push(wing);
-  const meshes = [hull, new THREE.Mesh(merge(dark), MAT.dark), new THREE.Mesh(merge(metal), MAT.metal)];
-  byF.forEach((list, fi) => { if (list.length) meshes.push(new THREE.Mesh(merge(list), factionMat(fi))); });
-  // a slit of hot red where a cockpit should be, and drives that glow when they're cold
+  // salvaged pods bolted on wherever they would fit, each still in its navy's paint
+  DETAIL.tank(B, [2.9, -0.3, -1.5], 0.9, 5.2, pickF());
+  B.add(pickF(), rbox(2.0, 1.8, 4.2, 0.2), T([-2.9, 0.1, -0.8], [0, 0, 0.12]));
+  B.add(pickF(), rbox(2.6, 1.0, 3.2, 0.2), T([0.3, 2.1, -1.8], [0, 0.15, 0]));
+  B.add('weld', rbox(0.1, 1.6, 4.0, 0.03), T([-1.9, 0.1, -0.8]));
+  // an open reactor frame behind the cabin: the shielding is gone and it glows
+  DETAIL.truss(B, [0, 0, -6.4], [0, 0, -9.6], 2.6, 'metal');
+  B.add('scavGlow', sph(0.95, 18, 12), T([0, 0, -8.0]));
+  B.add('metal', tor(1.15, 0.08, 6, 24), T([0, 0, -8.0]));
+  // mismatched drives
+  DETAIL.bell(B, [1.3, -0.2, -9.6], 1.25, 2.6); DETAIL.bell(B, [-1.5, 0.3, -9.6], 0.95, 2.0);
+  // a red slit for a cockpit, and a scrap radiator wing still bolted on
+  DETAIL.windows(B, core.frame(5.9, Math.PI / 2 - 0.3), 3, 0.5, 0.12, 0.08);
+  B.add('rad', rbox(6, 0.1, 2.6, 0.03), T([4.5, 1.2, -3.2], [0.2, 0.25, -0.45]));
   MAT.scavGlow = MAT.scavGlow || new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(4.2, 0.35, 0.12) });
-  const glow = new THREE.Mesh(merge([place(boxG(1.6, 0.14, 0.4), [0, 1.0, 6.05], [0.5, 0, 0]),
-    ...[1, -1].map((sx) => place(new THREE.TorusGeometry(0.5, 0.09, 6, 16), [2.8 * sx, 0, -6.75]))]), MAT.scavGlow);
+  const ir = irMaterial(0.3);
+  const meshes = [];
+  for (const [key, geo] of B.geometries()) {
+    const mat = key === 'scav' ? MAT.scav : key === 'glow' ? MAT.scavGlow : key === 'rad' ? MAT.partRad : (MAT[key] || MAT.dark);
+    const m = new THREE.Mesh(geo, mat); m.castShadow = key !== 'scavGlow' && key !== 'glow'; m.receiveShadow = true; m.userData.ir = ir.mat; meshes.push(m);
+  }
   const lamp = new THREE.SpotLight(new THREE.Color(1, 0.9, 0.75), 6000, 200, 0.4, 0.6, 1.8); lamp.position.set(0, 1, 8);
   const tgt = new THREE.Object3D(); tgt.position.set(0, -2, 40); g.add(tgt); lamp.target = tgt;
   const beamMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
   const beamU = uniform(0);
   beamMat.colorNode = vec3(5.0, 2.2, 1.0).mul(beamU);
   const beam = new THREE.Mesh(place(new THREE.CylinderGeometry(0.1, 0.1, 1, 6, 1, true), [0, 0.5, 0], [0, 0, 0]), beamMat);
-  beam.rotation.x = Math.PI / 2; beam.position.set(0, 0.2, 9.0); beam.scale.set(1, 26, 1);
-  const red = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red.position.set(2.75, 0, 0);
-  const red2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red2.position.set(-2.75, 0, 0);
-  g.add(...meshes, glow, lamp, beam, red, red2);
-  meshes.forEach((m) => { m.castShadow = true; m.receiveShadow = true; });
-  const ir = irMaterial(0.3);
-  [...meshes, glow].forEach((m) => { m.userData.ir = ir.mat; });
+  beam.rotation.x = Math.PI / 2; beam.position.set(0, -0.4, 7.4); beam.scale.set(1, 26, 1);
+  const red = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red.position.copy(core.frame(0, 0).o);
+  const red2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red2.position.copy(core.frame(0, Math.PI).o);
+  g.add(...meshes, lamp, beam, red, red2);
   scene.add(g);
   return { g, beamU, ir };
 }
@@ -1560,7 +1606,7 @@ function syncVisuals(dt, t) {
   for (let i = 0; i < PARTS.length; i++) {
     const vis = PARTS[i]; if (!vis) continue;
     const o = i * P.N; const st = parts[o + P.STATE] | 0;
-    vis.g.visible = st !== PS.CARGO && st !== PS.GONE && (parts[o + P.POS] - camera.position.x) ** 2 + (parts[o + P.POS + 1] - camera.position.y) ** 2 + (parts[o + P.POS + 2] - camera.position.z) ** 2 < 1.6e6;
+    vis.g.visible = st !== PS.CARGO && st !== PS.GONE && (parts[o + P.POS] - camera.position.x) ** 2 + (parts[o + P.POS + 1] - camera.position.y) ** 2 + (parts[o + P.POS + 2] - camera.position.z) ** 2 < 6.4e5; // beyond ~800 m a part is a few pixels: skip its draw calls
     if (!vis.g.visible) continue;
     vis.g.position.set(parts[o + P.POS], parts[o + P.POS + 1], parts[o + P.POS + 2]);
     vis.g.quaternion.set(parts[o + P.QUAT], parts[o + P.QUAT + 1], parts[o + P.QUAT + 2], parts[o + P.QUAT + 3]);
