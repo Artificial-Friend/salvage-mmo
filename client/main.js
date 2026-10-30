@@ -1323,7 +1323,7 @@ function bindInput() {
       if (tac.drag) {
         const dx = e.clientX - tac.drag.x, dy = e.clientY - tac.drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 5) tac.drag.moved = true;
-        if (tac.drag.moved) { tac.yaw = tac.drag.yaw - dx * 0.006; tac.pitch = THREE.MathUtils.clamp(tac.drag.pitch + dy * 0.005, 0.15, 1.5); }
+        if (tac.drag.moved) { tac.yaw = tac.drag.yaw + dx * 0.006; tac.pitch = THREE.MathUtils.clamp(tac.drag.pitch + dy * 0.005, 0.15, 1.5); }
       }
       return;
     }
@@ -1846,25 +1846,37 @@ function updateHUD(dt, stick) {
   const alive = (ship[S.STATE] | 0) === 0;
   // ship block
   const hullAbs = Math.max(0, ship[S.HULL]), hull = hullAbs / Math.max(1, ship[S.HULL_MAX]) * 100;
-  $('hullv').textContent = `${hull.toFixed(0)}% · ${hullAbs.toFixed(0)}${ship[S.ARMOR] > 0 ? ` · armor ${Math.round(ship[S.ARMOR] * 100)}%` : ''}`; $('hullb').style.width = `${hull}%`;
+  const pct = (x) => `${THREE.MathUtils.clamp(x, 0, 1) * 100}%`;
+  $('hullv').textContent = `${hull.toFixed(0)}%${ship[S.ARMOR] > 0 ? ` · armour ${Math.round(ship[S.ARMOR] * 100)}%` : ''}`; $('hullb').style.width = `${hull}%`;
   $('hullv').className = hull < 35 ? 'bad' : '';
+  $('hullb').style.background = hull < 35 ? 'var(--danger)' : '';
   {
+    // weapons and tether as compact status chips; the coilgun's charge as a bar
     const pdn = ship[S.PDC_N] | 0, cn = ship[S.COIL_N] | 0;
-    $('pdv').textContent = pdn ? `${pdn} × PDC · ${ship[S.PD_ON] < 0.5 ? 'OFF (P)' : ship[S.PD_FIRING] > 0.5 ? 'ENGAGING' : 'AUTO'}` : 'not fitted';
-    $('pdv').className = pdn && ship[S.PD_FIRING] > 0.5 ? 'warn' : '';
-    $('coilv').textContent = cn ? (ship[S.COIL_CD] > 0 ? `charging ${ship[S.COIL_CD].toFixed(1)} s` : `${cn > 1 ? `${cn} × ` : ''}ready · B`) : 'not fitted';
-    $('coilv').className = cn && ship[S.COIL_CD] <= 0 ? 'ok' : '';
+    $('pdv').textContent = pdn ? `PDC ×${pdn} · ${ship[S.PD_ON] < 0.5 ? 'off' : ship[S.PD_FIRING] > 0.5 ? 'firing' : 'auto'}` : '';
+    $('pdv').className = !pdn ? '' : `chip ${ship[S.PD_ON] < 0.5 ? '' : ship[S.PD_FIRING] > 0.5 ? 'warn' : 'ok'}`;
+    $('coilv').textContent = cn ? `Coilgun${cn > 1 ? ` ×${cn}` : ''} · ${ship[S.COIL_CD] > 0 ? 'charging' : 'ready B'}` : '';
+    $('coilv').className = cn ? `chip ${ship[S.COIL_CD] > 0 ? '' : 'ok'}` : '';
+    $('coilbar').hidden = !cn;
+    if (cn) $('coilb').style.width = pct(1 - ship[S.COIL_CD] / (game.coilReload || 4));
   }
   const crew = Math.max(0, ship[S.CREW]); $('crewv').textContent = `${crew.toFixed(0)}%`; $('crewv').className = crew < 50 ? 'bad' : '';
-  $('dosev').textContent = `${ship[S.DOSE].toFixed(0)} mSv`; $('dosev').className = ship[S.DOSE] > 40 ? 'bad' : ship[S.DOSE] > 15 ? 'warn' : '';
+  $('crewb').style.width = pct(crew / 100);
+  const dose = ship[S.DOSE];
+  $('dosev').textContent = `${dose.toFixed(0)} mSv`; $('dosev').className = dose > 40 ? 'bad' : dose > 15 ? 'warn' : '';
+  $('doseb').style.width = pct(dose / 100);
   const m = ship[S.MASS], prop = ship[S.PROP];
-  $('propv').textContent = `${(prop / 1000).toFixed(2)} t`;
+  game.prop0 = Math.max(game.prop0 || 0, prop);
+  $('propv').textContent = `${(prop / 1000).toFixed(1)} t`;
+  $('propb').style.width = pct(prop / Math.max(1, game.prop0));
+  $('propv').className = prop / Math.max(1, game.prop0) < 0.15 ? 'bad' : '';
   const dv = 1500 * 9.81 * Math.log(m / Math.max(1, m - prop));
-  $('dvv').textContent = `${dv.toFixed(0)} m/s`;
+  $('dvv').textContent = `${dv.toFixed(0)}`;
   const spd = vShip.length();
-  $('spdv').textContent = `${spd.toFixed(1)} m/s`;
+  $('spdv').textContent = `${spd.toFixed(1)}`;
   const hs = ship[S.HARP_STATE] | 0;
-  $('tethv').textContent = hs === 0 ? 'stowed' : hs === 1 ? 'in flight' : `${ship[S.TETH_LEN].toFixed(0)} m · ${(ship[S.TETH_TENSION] / 1000).toFixed(0)} kN`;
+  $('tethv').textContent = hs === 0 ? '' : hs === 1 ? 'Harpoon in flight' : `Tether ${ship[S.TETH_LEN].toFixed(0)} m · ${(ship[S.TETH_TENSION] / 1000).toFixed(0)} kN`;
+  $('tethv').className = hs ? 'chip' : '';
   $('assist').textContent = toggles.assist ? 'ASSIST ON' : 'ASSIST OFF';
   $('assist').style.color = toggles.assist ? '' : 'var(--amber)';
 
@@ -1878,9 +1890,13 @@ function updateHUD(dt, stick) {
   $('lasb').style.width = `${THREE.MathUtils.clamp((Tl - 300) / (1150 - 300), 0, 1) * 100}%`;
   $('lasb').style.background = ship[S.LASER_LOCK] > 0.5 ? 'var(--danger)' : 'var(--amber)';
   const dep = ship[S.RAD_DEPLOY], rh = ship[S.RAD_HEALTH];
-  $('radv').textContent = `${dep > 0.95 ? 'DEPLOYED' : dep < 0.05 ? 'FOLDED' : 'MOVING'} · ${(rh * 100).toFixed(0)}%`;
+  $('radv').textContent = `${dep > 0.95 ? 'deployed' : dep < 0.05 ? 'folded' : 'moving'} · ${(rh * 100).toFixed(0)}%`;
   $('radv').className = rh < 0.6 ? 'bad' : dep < 0.05 ? 'warn' : '';
-  $('flowv').textContent = `${(ship[S.PIN] / 1e6).toFixed(1)} / ${(ship[S.PRAD] / 1e6).toFixed(1)} MW`;
+  $('radb').style.width = `${THREE.MathUtils.clamp(rh * (0.25 + 0.75 * dep), 0, 1) * 100}%`;
+  const pin = ship[S.PIN] / 1e6, pout = ship[S.PRAD] / 1e6, fmax = Math.max(1, pin, pout);
+  $('flowv').textContent = `${pin.toFixed(1)} · ${pout.toFixed(1)} MW`;
+  $('flowv').className = pin > pout * 1.15 ? 'warn' : '';
+  $('flin').style.width = `${(pin / fmax) * 100}%`; $('flout').style.width = `${(pout / fmax) * 100}%`;
   $('sunv').textContent = ship[S.SHADOW] > 0.5 ? 'in wreck shadow' : 'exposed';
   $('sunv').className = ship[S.SHADOW] > 0.5 ? 'ok' : (ship[S.FLARE] | 0) === 2 ? 'bad' : '';
   $('coldchip').innerHTML = ship[S.COLD] > 0.5 ? '<span class="chip coldc">RUNNING COLD</span>' : '';
@@ -1889,6 +1905,8 @@ function updateHUD(dt, stick) {
   const sig = ship[S.SIG];
   $('sigval').textContent = `${sig.toFixed(1)} MW`;
   $('sigval').style.color = sig > 20 ? 'var(--danger)' : sig > 4 ? 'var(--amber)' : 'var(--sensor)';
+  $('sigb').style.width = `${Math.min(1, Math.log10(1 + sig) / Math.log10(41)) * 100}%`;
+  $('sigb').style.color = $('sigval').style.color;
   $('sigsub').textContent = `dormant sensors wake at ~${fmtDist(ship[S.DETECT_R])} · trackers hold you to ~${fmtDist(ship[S.TRACK_R])}`;
   {
     const stir = ship[S.STIR], si = ship[S.STIR_IDX] | 0;
@@ -1905,6 +1923,7 @@ function updateHUD(dt, stick) {
   const jf = ship[S.JF], jc = ship[S.JCOST];
   $('massv').textContent = `${(m / 1000).toFixed(1)} t`;
   $('cargov').textContent = `${ship[S.CARGO_N] | 0} parts${ship[S.SCRAP] > 0 ? ` + ${(ship[S.SCRAP] / 1000).toFixed(1)} t scrap` : ''} · ${(ship[S.CARGO] / 1000).toFixed(1)}/${(ship[S.CARGO_LIMIT] / 1000).toFixed(0)} t`;
+  $('cargob').style.width = `${THREE.MathUtils.clamp(ship[S.CARGO] / Math.max(1, ship[S.CARGO_LIMIT]), 0, 1) * 100}%`;
   $('jfv').textContent = `${jf.toFixed(2)} / ${jc.toFixed(2)}`;
   const scaleMax = Math.max(2, jf, jc) * 1.05;
   $('jfb').style.width = `${(jf / scaleMax) * 100}%`; $('jfb').style.background = jf >= jc ? 'var(--sensor)' : 'var(--danger)';

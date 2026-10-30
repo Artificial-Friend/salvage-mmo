@@ -69,6 +69,7 @@ function loadSave() {
     } catch { /* nothing to migrate */ }
   }
   if (!s.contracts || !s.contracts.length) s.contracts = offerContracts(s.runs);
+  s.test = !!s.test;   // test mode: free hulls, spawnable parts (optional field, defaults off)
   return s;
 }
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(SAVE)); } catch { /* storage unavailable */ } }
@@ -303,7 +304,6 @@ function renderHub() {
   $('h-scrap').textContent = `${SAVE.scrap.toFixed(1)} t`;
   $('h-parts').textContent = String(SAVE.parts.length);
   $('h-dose').textContent = `${Math.round(SAVE.dose)} mSv`;
-  $('h-runs').textContent = String(SAVE.runs);
   document.querySelectorAll('.hubnav button').forEach((b) => b.setAttribute('aria-current', b.dataset.tab === hubTab ? 'page' : 'false'));
   const views = { hangar: viewHangar, storage: viewStorage, market: viewMarket, missions: viewMissions, research: viewResearch };
   $('hubpanel').innerHTML = views[hubTab]();
@@ -321,70 +321,90 @@ function renderHub() {
     `${SAVE.contract ? contractById(SAVE.contract).text : 'no contract'}${SAVE.supplies.cell ? ` · +${SAVE.supplies.cell} jump cell${SAVE.supplies.cell > 1 ? 's' : ''}` : ''}${Object.keys(SAVE.intel).filter((k) => SAVE.intel[k]).length ? ' · intel loaded' : ''}`;
 }
 
-function statGrid(c, C) {
-  const w = [c.pdc ? `${c.pdc} PDC` : '', c.coil ? `${c.coil} coilgun` : ''].filter(Boolean).join(' · ') || '—';
-  return `<div class="stats">
-      <div><i>Mass, fuelled</i><b>${fmtT(c.dry + c.prop)}</b></div>
-      <div><i>Acceleration</i><b>${c.accel.toFixed(1)} m/s²</b></div>
-      <div><i>Δv</i><b>${Math.round(c.dv)} m/s</b></div>
-      <div><i>Hull · armor</i><b>${Math.round(c.hull)} · ${Math.round(c.armor * 100)}%</b></div>
-      <div><i>Hold</i><b>${fmtT(c.cargo)}</b></div>
-      <div><i>Can haul home</i><b>${fmtT(c.haul)}</b></div>
-      <div><i>Heat rejection</i><b>${c.heatAt500.toFixed(1)} MW</b></div>
-      <div><i>Signature</i><b>×${C.sig.toFixed(2)}</b></div>
-      <div><i>Weapons</i><b>${w}</b></div>
-    </div>`;
+// ---------------------------------------------------------------------
+//  Hangar: stat bars, mounts with pick-lists, the shipyard
+// ---------------------------------------------------------------------
+const FCOL = { TCN: '#8f9aa3', ARD: '#b0563c', BFC: '#c9a54a' };
+const fdot = (prov) => { const m = /^(TCN|ARD|BFC)\b/.exec(prov || ''); return m ? `<span class="fdot" style="background:${FCOL[m[1]]}" title="${m[1]}"></span>` : ''; };
+// what a new test part weighs and is worth (mirrors core partMass / partValue)
+const PART_MASS = { 0: 6000, 1: 3500, 2: 7500, 3: 4500, 4: 13000, 5: 17000, 6: 1800, 7: 400, 8: 2800, 9: 2600 };
+const PART_VALUE = { 0: 300, 1: 350, 2: 420, 3: 460, 4: 980, 5: 1150, 6: 320, 7: 0, 8: 190, 9: 45 };
+let hubMenu = null;   // the mount whose pick-list is open
+// bars compare with the best figure any hull in the yard reaches
+function statBars(c, C, compact = false) {
+  const w = [c.pdc ? `PDC ×${c.pdc}` : '', c.coil ? `coilgun ×${c.coil}` : ''].filter(Boolean).join(' · ') || 'unarmed';
+  const rows = [
+    ['Acceleration', `${c.accel.toFixed(1)} m/s²`, c.accel / 20],
+    ['Δv', `${Math.round(c.dv)} m/s`, c.dv / 8000],
+    ['Hull', `${Math.round(c.hull)}${c.armor > 0 ? ` · armour ${Math.round(c.armor * 100)}%` : ''}`, Math.sqrt(c.hull / 1500)],
+    ['Hold', fmtT(c.cargo), Math.sqrt(c.cargo / 450000)],
+    ...(compact ? [] : [
+      ['Haul home on one jump', fmtT(c.haul), c.haul / Math.max(1, c.cargo)],
+      ['Heat rejection', `${c.heatAt500.toFixed(1)} MW`, c.heatAt500 / 120],
+      ['IR signature', `×${C.sig.toFixed(2)}`, C.sig / 3.5, true],
+      ['Weapons', w, (c.pdc + c.coil * 2) / 8, true],
+    ]),
+  ];
+  return `<div class="sbars">${rows.map(([k, v, f, hot]) => `<div class="sbar ${hot ? 'hot' : ''}"><i>${k}</i><b>${v}</b><div class="bar"><div style="width:${Math.max(2, Math.min(1, f) * 100)}%"></div></div></div>`).join('')}</div>`;
 }
-
+function mountMenu(b, s) {
+  const pid = b.mounts[s.id];
+  const free = SAVE.parts.filter((x) => fitsMount(x.type, s.cls) && !fittedWhere(x.id)).sort((a, x) => x.value - a.value);
+  let html = `<div class="menu"><div class="hd">${esc(s.name)} · takes ${MOUNT_LABEL[s.cls].toLowerCase()} fittings</div>`;
+  if (pid) html += `<button class="opt" data-act="unmount" data-slot="${s.id}"><span>Remove · back to storage</span><span class="m"></span></button>`;
+  if (!free.length && !SAVE.test) html += `<div class="hd" style="text-transform:none;letter-spacing:0;font:inherit">Nothing in storage fits here. Salvage one on a run${SHIP_CLASSES[b.cls].slots.length ? '' : ''}.</div>`;
+  for (const p of free) html += `<button class="opt" data-act="fit" data-slot="${s.id}" data-id="${p.id}"><span>${fdot(p.prov)}${tag(p.type)} ${esc(PART_INFO[p.type].name)}<br><span class="m">${esc(PART_EFFECT[p.type] || '')} · ${fmtT(p.mass)} · ${esc(p.prov)}</span></span><span class="m">${money(p.value)}</span></button>`;
+  if (SAVE.test) {
+    const types = [...Array(10).keys()].filter((t) => t !== 7 && fitsMount(t, s.cls));
+    html += `<div class="hd">Test mode · spawn a new part in a navy's paint</div>`;
+    for (const t of types) html += `<div class="spawn"><span>${tag(t)} ${esc(PART_INFO[t].name)}<br><span class="m">${esc(PART_EFFECT[t] || '')}</span></span><span class="fbtns">${['TCN', 'ARD', 'BFC'].map((f) => `<button type="button" data-act="spawn" data-slot="${s.id}" data-type="${t}" data-f="${f}" style="color:${FCOL[f]}">${f}</button>`).join('')}</span></div>`;
+  }
+  return html + '</div>';
+}
 function viewHangar() {
   const bays = SAVE.bays.map((b, i) => `<button class="card ${SAVE.active === i ? 'sel' : ''}" data-act="bay" data-i="${i}">
-      <span class="zt">${BAY_NAMES[i]}</span><b>${b ? esc(b.name) : 'Empty'}</b><span>${b ? SHIP_CLASSES[b.cls].name : (i === 3 ? 'Any hull, up to capital' : 'Build a hull here')}</span></button>`).join('');
+      <span class="zt">${BAY_NAMES[i]}</span><b>${b ? esc(b.name) : 'Empty'}</b><span>${b ? SHIP_CLASSES[b.cls].name : (i === 3 ? 'Any hull' : 'Build a hull')}</span></button>`).join('');
   const b = activeBay();
+  const test = SAVE.test ? `<div class="testbar"><span>Test mode: hulls are free, and every mount can spawn any part that fits.</span>${b ? `<button class="mini" data-act="fillall">Fit every mount</button>` : ''}</div>` : '';
   let ship = '';
   if (!b) ship = `<p class="lede2">${BAY_NAMES[SAVE.active]} is empty. Build a hull here from the shipyard below.</p>`;
   else {
     const C = SHIP_CLASSES[b.cls];
-    const fitted = fittedOf(b);
-    const c = shipConfig(b.cls, fitted);
+    const c = shipConfig(b.cls, fittedOf(b));
     const rows = C.slots.map((s) => {
       const pid = b.mounts[s.id]; const p = pid ? partById(pid) : null;
-      const free = SAVE.parts.filter((x) => fitsMount(x.type, s.cls) && !fittedWhere(x.id));
-      return `<div class="slot ${p ? 'full' : ''}">
-        <div class="sn"><span class="cls">${MOUNT_LABEL[s.cls]}</span>${esc(s.name)}</div>
-        <div class="sp">${p ? `${tag(p.type)} ${esc(PART_INFO[p.type].name)}<br><span class="m">${esc(PART_EFFECT[p.type] || '')} · ${fmtT(p.mass)}</span>` : `<span class="m">empty${free.length ? ` · ${free.length} in storage fit` : ''}</span>`}</div>
-        <div class="sa">${p ? `<button class="mini ghost" data-act="unmount" data-slot="${s.id}">Remove</button>` : (free.length ? `<button class="mini" data-act="mountbest" data-slot="${s.id}">Install</button>` : '')}</div>
-      </div>`;
+      const open = hubMenu === s.id;
+      return `<button class="mbtn ${open ? 'open' : ''}" data-act="menu" data-slot="${s.id}">
+          <span class="cls">${MOUNT_LABEL[s.cls]}</span>
+          <span class="what ${p ? '' : 'empty'}">${p ? `${fdot(p.prov)}${esc(PART_INFO[p.type].name)}` : 'empty'} <span class="m">· ${esc(s.name)}</span></span>
+          <span class="go2">${open ? 'close' : p ? 'change' : 'fit'}</span></button>${open ? mountMenu(b, s) : ''}`;
     }).join('');
-    ship = `<h3 class="sec">${esc(b.name)} <span>${C.name} · ${Object.keys(b.mounts).length}/${C.slots.length} mounts</span></h3>
-      <p class="lede2">${esc(C.blurb)}</p>
-      ${statGrid(c, C)}
+    ship = `<h3 class="sec">${esc(b.name)} <span>${C.name} · ${Object.keys(b.mounts).length}/${C.slots.length} mounts fitted</span></h3>
+      ${statBars(c, C)}
       ${c.ready ? '' : '<div class="ready">Needs a fusion reactor core in its reactor bay before it can fly.</div>'}
-      <div class="slots">${rows}</div>
-      <p class="m">If this ship is lost, its fittings are lost with it and the bay gets a fresh cutter.</p>`;
+      <div class="mounts">${rows}</div>
+      <p class="m">Lose this ship and its fittings are lost with it; the bay gets a fresh cutter.</p>`;
   }
-  const yard = CLASS_ORDER.filter((k) => k !== 'cutter').map((k) => {
-    const C = SHIP_CLASSES[k];
-    const c = shipConfig(k, []);
+  const yard = CLASS_ORDER.filter((k) => k !== 'cutter' || !activeBay() || SAVE.test).map((k) => {
+    const C = SHIP_CLASSES[k], c = shipConfig(k, []);
     const okBay = C.bay !== 'dock' || SAVE.active === 3;
-    const afford = SAVE.scrap >= C.scrap;
+    const afford = SAVE.test || SAVE.scrap >= C.scrap;
+    const cost = k === 'cutter' || SAVE.test ? 'free' : `${C.scrap} t scrap`;
     const cur = activeBay();
-    const label = !okBay ? 'Dry dock only' : !afford ? `Needs ${C.scrap} t scrap` : cur ? `Replace ${cur.name}` : `Build in ${BAY_NAMES[SAVE.active]}`;
-    return `<div class="mcard">
-      <div class="mh"><b>${C.name}</b><span>${C.scrap} t scrap</span></div>
-      <p>${esc(C.blurb)}</p>
-      <div class="mf"><span class="m">${c.accel.toFixed(1)} m/s² · hold ${fmtT(c.cargo)} · hull ${c.hull} · ${C.slots.length} mounts</span>
-      <button class="mini" data-act="build" data-cls="${k}" ${okBay && afford ? '' : 'disabled'}>${label}</button></div>
+    const label = !okBay ? 'Dry dock only' : !afford ? `Needs ${C.scrap} t` : cur ? `Replace ${cur.name}` : `Build here`;
+    return `<div class="ycard">
+      <div class="mh"><b>${C.name}</b><span class="m">${cost} · ${C.slots.length} mounts</span></div>
+      ${statBars(c, C, true)}
+      <button class="mini" data-act="build" data-cls="${k}" ${okBay && afford ? '' : 'disabled'}>${label}</button>
     </div>`;
   }).join('');
-  const cutterCard = activeBay() && activeBay().cls !== 'cutter' ? '' : (activeBay() ? '' : `<button class="mini" data-act="build" data-cls="cutter">Roll out a starter cutter here (free)</button>`);
   return `
     <h2>Hangar</h2>
+    ${test}
     <div class="cards4">${bays}</div>
     ${ship}
-    <h3 class="sec">Shipyard <span>${SAVE.scrap.toFixed(1)} t scrap in the yard</span></h3>
-    <p class="lede2">Harpoon loose hull fragments and winch them aboard, or break down parts in Storage. Replacing a ship returns its fittings to storage and half the scrap it cost.</p>
-    ${cutterCard}
-    <div class="mgrid">${yard}</div>`;
+    <h3 class="sec">Shipyard <span>${SAVE.test ? 'test mode · free' : `${SAVE.scrap.toFixed(1)} t scrap`}</span></h3>
+    <div class="yard">${yard}</div>`;
 }
 
 function viewStorage() {
@@ -467,7 +487,24 @@ function hubAction(e) {
   const act = btn.dataset.act;
   const b = activeBay();
   if (act === 'tab') hubTab = btn.dataset.tab;
-  else if (act === 'bay') SAVE.active = +btn.dataset.i;
+  else if (act === 'bay') { SAVE.active = +btn.dataset.i; hubMenu = null; }
+  else if (act === 'menu') hubMenu = hubMenu === btn.dataset.slot ? null : btn.dataset.slot;
+  else if (act === 'fit' && b) { const p = partById(+btn.dataset.id); if (p && !fittedWhere(p.id)) { b.mounts[btn.dataset.slot] = p.id; hubMenu = null; beep(760, 0.06, 0.05, 'sine'); } }
+  else if (act === 'spawn' && b && SAVE.test) {
+    const t = +btn.dataset.type, f = btn.dataset.f;
+    const p = { id: SAVE.nextId++, type: t, prov: `${f} test stock`, mass: PART_MASS[t], value: PART_VALUE[t] };
+    SAVE.parts.push(p); b.mounts[btn.dataset.slot] = p.id; hubMenu = null; beep(760, 0.06, 0.05, 'sine');
+  } else if (act === 'fillall' && b && SAVE.test) {
+    // the heaviest fitting each mount takes, weapons alternating, navies in turn
+    const pick = { hardpoint: [3, 4], engine: [2], utility: [1, 6, 8], structure: [0], core: [5] };
+    SHIP_CLASSES[b.cls].slots.forEach((s, i) => {
+      if (b.mounts[s.id]) return;
+      const opts = pick[s.cls] || [9], t = opts[i % opts.length], f = ['TCN', 'ARD', 'BFC'][i % 3];
+      const p = { id: SAVE.nextId++, type: t, prov: `${f} test stock`, mass: PART_MASS[t], value: PART_VALUE[t] };
+      SAVE.parts.push(p); b.mounts[s.id] = p.id;
+    });
+    hubMenu = null;
+  }
   else if (act === 'zone') SAVE.zone = btn.dataset.id;
   else if (act === 'contract') SAVE.contract = btn.dataset.id || null;
   else if (act === 'sell' || act === 'scrap') {
@@ -484,13 +521,16 @@ function hubAction(e) {
     const slot = SHIP_CLASSES[b.cls].slots.find((s) => s.id === btn.dataset.slot);
     const best = SAVE.parts.filter((x) => fitsMount(x.type, slot.cls) && !fittedWhere(x.id)).sort((a, x) => x.value - a.value)[0];
     if (best) b.mounts[slot.id] = best.id;
-  } else if (act === 'unmount' && b) delete b.mounts[btn.dataset.slot];
+  } else if (act === 'unmount' && b) { delete b.mounts[btn.dataset.slot]; hubMenu = null; }
   else if (act === 'build') {
     const k = btn.dataset.cls; const C = SHIP_CLASSES[k];
-    if (SAVE.scrap < C.scrap) return;
+    if (!SAVE.test && SAVE.scrap < C.scrap) return;
     if (C.bay === 'dock' && SAVE.active !== 3) return;
-    if (b && b.cls !== 'cutter') SAVE.scrap += SHIP_CLASSES[b.cls].scrap * 0.5;   // fittings return to storage automatically
-    SAVE.scrap -= C.scrap;
+    if (!SAVE.test) {
+      if (b && b.cls !== 'cutter') SAVE.scrap += SHIP_CLASSES[b.cls].scrap * 0.5;   // fittings return to storage automatically
+      SAVE.scrap -= C.scrap;
+    }
+    hubMenu = null;
     SAVE.bays[SAVE.active] = newShip(k);
     beep(520, 0.2, 0.08, 'triangle');
   } else if (act === 'buy') {
@@ -512,6 +552,7 @@ function applyLoadout() {
   const c = shipConfig(b.cls, fitted);
   writeConfig(c);
   ship[S.JF] += (SAVE.supplies.cell || 0) * 0.38;
+  game.coilReload = c.coilReload; game.prop0 = 0;
   // the flight model carries the same fittings the hangar shows
   disposeShipModel(SHIP);
   SHIP = buildShipModel(b.cls, fitted, scene);
@@ -614,6 +655,8 @@ function updateContractHud() {
 // ---------------------------------------------------------------------
 document.querySelectorAll('.hubnav button').forEach((b) => b.addEventListener('click', () => { hubTab = b.dataset.tab; renderHub(); }));
 $('hubpanel').addEventListener('click', hubAction);
+$('testmode').checked = !!SAVE.test;
+$('testmode').addEventListener('change', (e) => { SAVE.test = e.target.checked; hubMenu = null; persist(); renderHub(); });
 $('launch').addEventListener('click', async () => {
   if (!world.ready || !activeBay()) return;
   $('hub').hidden = true;

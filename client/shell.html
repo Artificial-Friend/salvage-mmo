@@ -53,6 +53,26 @@ body {
 .br { right: max(16px, env(safe-area-inset-right, 0px)); bottom: calc(16px + env(safe-area-inset-bottom, 0px)); width: 268px; }
 
 .row { display: flex; justify-content: space-between; gap: 10px; padding: 1.5px 0; }
+/* meters: label and value on one line, a bar underneath with warning marks */
+.meter { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; align-items: baseline; margin-bottom: 6px; }
+.meter i { font-style: normal; color: var(--dim); font: 500 9.5px/1.2 var(--f-display); letter-spacing: .14em; text-transform: uppercase; }
+.meter b { font-weight: 500; color: var(--ink); }
+.meter .bar, .meter .flow { grid-column: 1 / -1; margin: 3px 0 0; }
+.bar.prop > div { background: #8fb2ff; } .bar.crew > div { background: #9fd7c4; } .bar.dose > div { background: #e0c54a; }
+.bar.rad > div { background: #c78a54; } .bar.coil { margin: 6px 0 0; } .bar.coil > div { background: #9fc4ff; }
+.bar .mark { top: 0; bottom: 0; width: 1px; background: rgba(0,0,0,.75); }
+.flow { display: grid; gap: 2px; } .flow > div { height: 3px; width: 0; transition: width .25s; }
+#flin { background: var(--danger); } #flout { background: var(--sensor); }
+.kv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 2px 0 8px; }
+.kv div { display: flex; flex-direction: column; }
+.kv i { font-style: normal; color: var(--dim); font: 500 9.5px/1.2 var(--f-display); letter-spacing: .14em; text-transform: uppercase; }
+.kv b { font: 600 20px/1.1 var(--f-display); color: var(--ink); letter-spacing: .02em; }
+.kv s { text-decoration: none; color: var(--dim); font-size: 9.5px; }
+.chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.chips span:empty { display: none; }
+.sigbar { height: 4px; background: rgba(255,255,255,.08); position: relative; margin: 5px auto 0; width: 220px; }
+.sigbar > div { position: absolute; inset: 0 auto 0 0; background: currentColor; transition: width .2s; }
+.sigbar .mark { position: absolute; top: -3px; bottom: -3px; width: 1px; background: var(--dim); }
 .row b { font-weight: 500; color: var(--ink); }
 .row i { font-style: normal; color: var(--dim); }
 .bar { height: 5px; background: rgba(255,255,255,.07); margin: 3px 0 6px; position: relative; overflow: hidden; }
@@ -203,6 +223,40 @@ table.loot td.num { text-align: right; }
 .ready { padding: 8px 10px; border-left: 2px solid var(--danger); background: rgba(255,90,71,.08); color: #e7c9c3; margin-bottom: 12px; }
 .ready.ok { border-left-color: var(--sensor); background: rgba(113,211,198,.08); color: #c8ebe6; }
 .slots { display: grid; gap: 1px; background: rgba(255,255,255,.06); }
+/* stat bars: a value, and how it compares with the best hull in the yard */
+.sbars { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px 16px; margin: 4px 0 12px; }
+.sbar { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px 8px; min-width: 0; }
+.sbar i { font-style: normal; color: var(--dim); font: 500 9.5px/1.2 var(--f-display); letter-spacing: .14em; text-transform: uppercase; }
+.sbar b { font-weight: 600; font-size: 12px; }
+.sbar .bar { grid-column: 1 / -1; margin: 0; height: 4px; }
+.sbar .bar > div { background: var(--sensor); } .sbar.hot .bar > div { background: var(--amber); }
+/* mounts: one button per mount; picking one opens the list of what fits */
+.mounts { display: grid; gap: 4px; margin-bottom: 8px; }
+.mbtn { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; align-items: center; text-align: left; font: inherit; color: var(--ink);
+  background: rgba(255,255,255,.03); border: 1px solid rgba(255,255,255,.1); padding: 7px 9px; cursor: pointer; min-width: 0; }
+.mbtn:hover, .mbtn.open { border-color: var(--amber); }
+.mbtn .cls { font: 600 9.5px/1.2 var(--f-display); letter-spacing: .14em; text-transform: uppercase; color: var(--dim); }
+.mbtn .what { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mbtn .what.empty { color: var(--dim); }
+.mbtn .go2 { color: var(--amber); font: 600 10px/1 var(--f-display); letter-spacing: .12em; }
+.menu { border: 1px solid var(--amber); border-top: 0; margin: -4px 0 6px; background: rgba(10,14,16,.97); display: grid; }
+.menu .opt { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; text-align: left; font: inherit; color: var(--ink);
+  background: none; border: 0; border-top: 1px solid rgba(255,255,255,.06); padding: 7px 10px; cursor: pointer; }
+.menu .opt:hover { background: rgba(233,164,64,.1); }
+.menu .opt .m { font-size: 11px; }
+.menu .hd { padding: 6px 10px; font: 600 9.5px/1.2 var(--f-display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
+.menu .spawn { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 6px 10px; border-top: 1px solid rgba(255,255,255,.06); }
+.fdot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+.fbtns { display: flex; gap: 4px; }
+.fbtns button { font: 600 10px/1 var(--f-display); letter-spacing: .1em; padding: 5px 7px; cursor: pointer; border: 1px solid rgba(255,255,255,.2); background: none; color: var(--ink); }
+.fbtns button:hover { border-color: var(--amber); }
+.testmode { display: inline-flex; gap: 6px; align-items: center; font: 600 10.5px/1 var(--f-display); letter-spacing: .14em; text-transform: uppercase; color: var(--amber); cursor: pointer; margin-right: 6px; }
+.testbar { border: 1px dashed var(--amber); color: var(--amber); padding: 6px 10px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 11.5px; }
+.yard { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.ycard { border: 1px solid rgba(255,255,255,.1); padding: 10px 12px; display: grid; gap: 8px; align-content: start; }
+.ycard .mh { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.ycard .mh b { font: 700 16px/1 var(--f-display); text-transform: uppercase; }
+.ycard .sbars { grid-template-columns: 1fr; gap: 5px; margin: 0; }
 .slot { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.6fr) auto; gap: 10px; align-items: center; padding: 7px 8px; background: rgba(6,10,12,.94); }
 .slot .sn { display: grid; gap: 2px; min-width: 0; }
 .slot .cls { font: 600 9.5px/1 var(--f-display); letter-spacing: .16em; text-transform: uppercase; color: var(--dim); }
@@ -313,16 +367,13 @@ table.loot td.num { text-align: right; }
 
   <div class="mfd tl">
     <h3><span id="shipname" style="color:var(--amber);letter-spacing:.18em;font:600 11px/1 var(--f-display)">Mule</span> <span id="assist">ASSIST ON</span></h3>
-    <div class="row"><i>Hull</i><b id="hullv">100%</b></div>
-    <div class="bar hull"><div id="hullb" style="width:100%"></div></div>
-    <div class="row"><i>Crew</i><b id="crewv">100%</b></div>
-    <div class="row"><i>Rad dose</i><b id="dosev">0 mSv</b></div>
-    <div class="row"><i>Reaction mass</i><b id="propv">14.0 t</b></div>
-    <div class="row"><i>Δv remaining</i><b id="dvv">—</b></div>
-    <div class="row"><i>Speed (zone frame)</i><b id="spdv">0.0 m/s</b></div>
-    <div class="row"><i>Tether</i><b id="tethv">stowed</b></div>
-    <div class="row"><i>Point defense</i><b id="pdv">not fitted</b></div>
-    <div class="row"><i>Coilgun</i><b id="coilv">not fitted</b></div>
+    <div class="kv"><div><i>Speed</i><b id="spdv">0.0</b><s>m/s · zone frame</s></div><div><i>Δv left</i><b id="dvv">—</b><s>m/s</s></div></div>
+    <div class="meter"><i>Hull</i><b id="hullv">100%</b><div class="bar hull"><div id="hullb" style="width:100%"></div><span class="mark" style="left:35%"></span></div></div>
+    <div class="meter"><i>Reaction mass</i><b id="propv">—</b><div class="bar prop"><div id="propb" style="width:100%"></div></div></div>
+    <div class="meter"><i>Crew</i><b id="crewv">100%</b><div class="bar crew"><div id="crewb" style="width:100%"></div><span class="mark" style="left:50%"></span></div></div>
+    <div class="meter"><i>Radiation dose</i><b id="dosev">0 mSv</b><div class="bar dose"><div id="doseb" style="width:0"></div><span class="mark" style="left:15%"></span><span class="mark" style="left:40%"></span></div></div>
+    <div class="chips"><span id="tethv"></span><span id="pdv"></span><span id="coilv"></span></div>
+    <div class="bar coil" id="coilbar" hidden><div id="coilb" style="width:0"></div></div>
   </div>
 
   <div id="ticker"><div id="objective"></div><div id="contract"></div><div id="apchip"></div><div id="flare"></div><div id="msgs"></div></div>
@@ -334,19 +385,19 @@ table.loot td.num { text-align: right; }
 
   <div class="mfd bl">
     <h3>Thermal <span id="coldchip"></span></h3>
-    <div class="row"><i>Hull bus</i><b id="busv">300 K</b></div>
+    <div class="meter"><i>Hull bus</i><b id="busv">300 K</b></div>
     <div class="gauge"><div class="lim" style="left:72%"></div><div id="busn" class="needle" style="left:0"></div></div>
     <div class="scale"><span>250</span><span>400</span><span>550</span><span>640 dmg</span></div>
-    <div class="row"><i>Laser head</i><b id="lasv">300 K</b></div>
-    <div class="bar"><div id="lasb" style="width:0"></div></div>
-    <div class="row"><i>Radiators</i><b id="radv">DEPLOYED</b></div>
-    <div class="row"><i>Heat in / out</i><b id="flowv">— / —</b></div>
-    <div class="row"><i>Sun exposure</i><b id="sunv">exposed</b></div>
+    <div class="meter"><i>Laser head</i><b id="lasv">300 K</b><div class="bar"><div id="lasb" style="width:0"></div><span class="mark" style="left:76%"></span></div></div>
+    <div class="meter"><i>Radiators</i><b id="radv">DEPLOYED</b><div class="bar rad"><div id="radb" style="width:100%"></div></div></div>
+    <div class="meter"><i>Heat in · out</i><b id="flowv">— / —</b><div class="flow"><div id="flin"></div><div id="flout"></div></div></div>
+    <div class="meter"><i>Sun</i><b id="sunv">exposed</b></div>
   </div>
 
   <div id="sigbox">
     <div id="siglbl">IR signature</div>
     <div id="sigval">0.0 MW</div>
+    <div class="sigbar"><div id="sigb"></div><span class="mark" style="left:43%" title="4 MW"></span><span class="mark" style="left:82%" title="loud"></span></div>
     <div id="sigsub">visible to passive sensors at ~0 m</div>
     <div id="tracked"></div>
   </div>
@@ -371,11 +422,9 @@ table.loot td.num { text-align: right; }
 
   <div class="mfd br">
     <h3>Jump drive <span id="jumpchip"></span></h3>
-    <div class="row"><i>Ship mass</i><b id="massv">52.0 t</b></div>
-    <div class="row"><i>Cargo</i><b id="cargov">0 parts · 0.0 t</b></div>
-    <div class="row"><i>Jump fuel / cost</i><b id="jfv">1.10 / 0.85</b></div>
-    <div class="bar"><div id="jfb" style="width:50%"></div><div id="jcm" class="mark" style="left:40%"></div></div>
-    <div class="row"><i>Load margin</i><b id="marginv">+8.0 t</b></div>
+    <div class="meter"><i>Jump fuel · cost</i><b id="jfv">1.10 / 0.85</b><div class="bar"><div id="jfb" style="width:50%"></div><div id="jcm" class="mark" style="left:40%;background:var(--ink);width:2px"></div></div></div>
+    <div class="meter"><i>Hold</i><b id="cargov">0 parts · 0.0 t</b><div class="bar"><div id="cargob" style="width:0;background:#b9a27a"></div></div></div>
+    <div class="kv"><div><i>Ship mass</i><b id="massv" style="font-size:15px">52.0 t</b></div><div><i>Load margin</i><b id="marginv" style="font-size:15px">+8.0 t</b></div></div>
     <div class="bar" id="spoolwrap" hidden><div id="spoolb" style="width:0; background: var(--sensor)"></div></div>
   </div>
 </div>
@@ -392,12 +441,12 @@ table.loot td.num { text-align: right; }
   <header class="hubbar">
     <div class="brand"><span class="eyebrow">Ostrava Yard · Hangar 4</span><b>Salvage</b></div>
     <div class="wallet">
+      <label class="testmode" title="Testing: every hull is free and any part can be spawned into a mount"><input type="checkbox" id="testmode"> Test mode</label>
       <button type="button" class="ghost hubgfx" id="hubgfx">Graphics</button>
       <span><i>Credits</i><b id="h-cred">¢0</b></span>
       <span><i>Scrap</i><b id="h-scrap">0 t</b></span>
       <span><i>Parts</i><b id="h-parts">0</b></span>
       <span><i>Crew dose</i><b id="h-dose">0 mSv</b></span>
-      <span><i>Runs</i><b id="h-runs">0</b></span>
     </div>
   </header>
   <nav class="hubnav" aria-label="Hub">
