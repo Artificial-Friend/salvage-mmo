@@ -519,8 +519,8 @@ function buildMaterials() {
   MAT.drone = new THREE.MeshStandardMaterial({ color: '#2b2f33', roughness: 0.42, metalness: 0.85 });
   MAT.glass = new THREE.MeshStandardMaterial({ color: '#0b1216', roughness: 0.08, metalness: 0.2, emissive: new THREE.Color(0.05, 0.25, 0.28) });
   MAT.rock = new THREE.MeshStandardMaterial({ color: '#544c45', roughness: 0.92, metalness: 0.25, flatShading: true });
-  MAT.radiator = new THREE.MeshStandardMaterial({ color: '#a89a7c', roughness: 0.32, metalness: 0.95, emissive: new THREE.Color(0, 0, 0) });
-  MAT.partRad = new THREE.MeshStandardMaterial({ color: '#9b8f74', roughness: 0.38, metalness: 0.9 });
+  MAT.radiator = new THREE.MeshStandardMaterial({ color: '#77736b', roughness: 0.45, metalness: 0.85, emissive: new THREE.Color(0, 0, 0) });
+  MAT.partRad = new THREE.MeshStandardMaterial({ color: '#6f6a61', roughness: 0.45, metalness: 0.85 });
   MAT.bellIn = new THREE.MeshStandardMaterial({ color: '#191919', roughness: 0.3, metalness: 1, side: THREE.DoubleSide, emissive: new THREE.Color(0, 0, 0) });
   MAT.cell = new THREE.MeshStandardMaterial({ color: '#cfd8ee', roughness: 0.25, metalness: 0.6 });
   MAT.cellGlow = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(0.9, 1.6, 5.5) });
@@ -541,45 +541,63 @@ function buildMaterials() {
 // =====================================================================
 //  Salvage parts — one distinct silhouette per function
 // =====================================================================
+// Salvage parts — one distinct silhouette per function. Meshes marked paint take the colours of the
+// navy that built the part (see paintPart); the rest is bare metal and machinery.
 function partPrototype(type) {
   const g = new THREE.Group();
-  const add = (geo, mat) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; g.add(m); return m; };
+  const add = (geo, mat, paint = false) => { const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; m.userData.paint = paint; g.add(m); return m; };
+  const pod = { keel: 0.45, deck: 0.45, lo: -0.45, hi: 0.45, up: 1 };
   switch (type) {
-    case 0: // armor slab
-      add(merge([place(boxG(5.2, 0.9, 4.2), [0, 0.2, 0]), place(boxG(4.6, 0.5, 3.6), [0, 0.85, 0]), place(boxG(5.4, 0.25, 0.5), [0, 1.15, -1.2]), place(boxG(5.4, 0.25, 0.5), [0, 1.15, 1.2])]), MAT.tcn);
+    case 0: // armour slab: layered plates with a toothed leading edge
+      add(merge([armorPlateG(3.6, 5.2, 0.45, 0.22), place(armorPlateG(2.8, 4.0, 0.35, 0.3), [0, 0.45, 0.3])]), MAT.tcn, true);
+      add(merge([...[-1.1, 0, 1.1].map((x) => place(spikeG(0.28, 1.3 - Math.abs(x) * 0.25), [x, 0.32, 2.5], [Math.PI / 2, 0, 0])),
+        ...[[-1.4, -2.0], [1.4, -2.0], [-1.4, 2.0], [1.4, 2.0]].map(([x, z]) => place(boxG(0.22, 0.14, 0.22), [x, 0.5, z]))]), MAT.dark);
       break;
     case 1: // radiator panel on a boom
-      add(merge([place(boxG(0.4, 2.0, 0.4), [0, 0.9, 0]), place(boxG(0.5, 0.5, 0.5), [0, 0, 0])]), MAT.metal);
+      add(merge([place(boxG(0.4, 2.0, 0.4), [0, 0.9, 0]), place(facetCylG(0.45, 0.55, 0.4, 6), [0, 0.2, 0])]), MAT.metal);
       add(merge([place(boxG(6.8, 0.1, 3.4), [0, 2.0, 0]), ...[-1.3, -0.45, 0.45, 1.3].map((z) => place(boxG(6.8, 0.2, 0.1), [0, 2.02, z]))]), MAT.partRad);
       break;
-    case 2: // aux thruster
-      add(merge([place(boxG(2.4, 1.5, 2.4), [0, 0.6, 0]), place(cylG(0.8, 0.8, 0.8, 12), [0, 1.6, 0])]), MAT.metal);
+    case 2: // aux thruster: armoured pod, gimbal ring, bell
+      add(loftUpG([{ z: 0, w: 1.2, h: 1.2 }, { z: 0.3, w: 1.35, h: 1.35 }, { z: 1.45, w: 1.2, h: 1.2 }, { z: 1.8, w: 0.85, h: 0.85 }], pod), MAT.tcn, true);
+      add(merge([place(new THREE.TorusGeometry(0.95, 0.12, 6, 16), [0, 1.95, 0], [Math.PI / 2, 0, 0]), place(boxG(2.9, 0.25, 0.3), [0, 1.0, 0])]), MAT.metal);
       add(place(bellG(1.2, 2.2), [0, 2.0, 0], [Math.PI, 0, 0]), MAT.bellIn);
       break;
-    case 3: // point-defense turret
-      add(merge([place(cylG(1.5, 1.8, 0.9, 16), [0, 0.4, 0]), place(new THREE.SphereGeometry(1.25, 18, 10, 0, Math.PI * 2, 0, Math.PI / 2), [0, 0.85, 0])]), MAT.ard);
-      add(merge([-0.32, 0, 0.32].map((x) => place(cylG(0.13, 0.15, 3.2, 8), [x, 1.5, 1.4], [Math.PI / 2 - 0.25, 0, 0]))), MAT.metal);
-      add(place(boxG(0.5, 0.35, 0.3), [0, 1.9, -0.5]), MAT.glass);
+    case 3: // point-defense turret: barbette, wedge head, three barrels, a red sensor eye
+      add(facetCylG(1.7, 1.5, 0.6, 10), MAT.dark).position.y = 0.3;
+      add(loftG([{ z: -1.3, w: 1.15, h: 0.55, y: 1.15 }, { z: 0.6, w: 1.2, h: 0.6, y: 1.15 }, { z: 1.45, w: 0.7, h: 0.38, y: 1.1 }], { keel: 0.7, deck: 0.6, lo: -0.2, hi: 0.2, up: 0.95 }), MAT.ard, true);
+      add(merge([...[-0.3, 0, 0.3].map((x) => place(facetCylG(0.12, 0.15, 3.0, 6), [x, 1.12, 2.8], [Math.PI / 2, 0, 0])), place(boxG(1.1, 0.45, 0.7), [0, 1.12, 1.55])]), MAT.metal);
+      add(place(boxG(0.32, 0.18, 0.12), [0.62, 1.42, 1.25]), MAT.red);
       break;
     case 4: // coilgun spine — long, unmistakable
-      add(merge([place(boxG(0.5, 0.5, 11), [0.55, 1.0, 0]), place(boxG(0.5, 0.5, 11), [-0.55, 1.0, 0]), place(boxG(2.2, 1.1, 2.2), [0, 0.5, -4.6])]), MAT.tcn);
-      add(merge([-3.5, -1.8, 0, 1.8, 3.6].map((z) => place(new THREE.TorusGeometry(1.0, 0.24, 8, 18), [0, 1.0, z])) ), MAT.metal);
+      add(merge([loftG([{ z: -5.6, w: 1.2, h: 0.75, y: 0.95 }, { z: -3.4, w: 1.2, h: 0.75, y: 0.95 }, { z: -2.8, w: 0.8, h: 0.6, y: 0.95 }], { keel: 0.7, deck: 0.6, lo: -0.3, hi: 0.3, up: 0.9 }),
+        place(boxG(1.8, 0.45, 3.2), [0, 0.22, -3.6])]), MAT.tcn, true);
+      add(merge([place(boxG(0.26, 0.42, 10.6), [0.42, 0.95, 0.4]), place(boxG(0.26, 0.42, 10.6), [-0.42, 0.95, 0.4]),
+        loftG([{ z: 5.4, w: 0.75, h: 0.55, y: 0.95 }, { z: 6.2, w: 0.75, h: 0.55, y: 0.95 }, { z: 6.5, w: 0.5, h: 0.4, y: 0.95 }], pod)]), MAT.dark);
+      add(merge([-2.4, -1.2, 0, 1.2, 2.4, 3.6, 4.6].map((z) => loftG([{ z, w: 0.82, h: 0.8, y: 0.95 }, { z: z + 0.28, w: 0.82, h: 0.8, y: 0.95 }], pod))), MAT.metal);
+      add(place(boxG(0.12, 0.12, 9.6), [0, 0.95, 0.5]), MAT.cellGlow);
       break;
-    case 5: // fusion reactor core
-      add(merge([place(new THREE.SphereGeometry(2.2, 24, 16), [0, 2.0, 0]), place(cylG(0.6, 0.6, 5.4, 12), [2.0, 2.0, 0], [0, 0, Math.PI / 2]), place(cylG(0.6, 0.6, 5.4, 12), [0, 2.0, 2.0], [Math.PI / 2, 0, 0])]), MAT.dark);
-      add(merge([0, 1, 2, 3].map((k) => place(new THREE.TorusGeometry(2.24, 0.06, 6, 40), [0, 2.0, 0], [Math.PI / 2, k * Math.PI / 4, 0]))), MAT.reactorGlow);
+    case 5: // fusion reactor core: faceted shield in a cage, glowing at the seams
+      add(faceted(new THREE.IcosahedronGeometry(2.1, 1)), MAT.dark).position.y = 2.2;
+      add(loftUpG([{ z: 0, w: 1.6, h: 1.6 }, { z: 0.5, w: 1.3, h: 1.3 }, { z: 0.8, w: 0.9, h: 0.9 }], pod), MAT.ard, true);
+      add(merge([0, 1, 2].map((k) => place(new THREE.TorusGeometry(2.3, 0.1, 6, 24), [0, 2.2, 0], [Math.PI / 2, k * Math.PI / 3, 0]))), MAT.metal);
+      add(merge([0, 1, 2, 3].map((k) => place(new THREE.TorusGeometry(2.12, 0.05, 6, 40), [0, 2.2, 0], [Math.PI / 2, k * Math.PI / 4 + 0.4, 0]))), MAT.reactorGlow);
       break;
-    case 6: // sensor mast
-      add(merge([place(cylG(0.18, 0.25, 4.2, 8), [0, 2.1, 0]), place(boxG(1.0, 0.6, 1.0), [0, 0.3, 0]), place(cylG(0.04, 0.04, 2.4, 4), [0.6, 4.8, 0])]), MAT.metal);
-      add(place(new THREE.SphereGeometry(1.5, 20, 8, 0, Math.PI * 2, 0, 0.9), [0, 4.0, 0.2], [Math.PI / 2 + 0.4, 0, 0]), MAT.cell);
+    case 6: { // sensor mast: faceted mast, tilted phased-array panel, whip antenna
+      add(merge([place(facetCylG(0.3, 0.18, 4.2, 4), [0, 2.1, 0]), place(facetCylG(0.03, 0.03, 2.4, 4), [0.6, 4.8, 0])]), MAT.metal);
+      add(loftUpG([{ z: 0, w: 0.7, h: 0.7 }, { z: 0.6, w: 0.55, h: 0.55 }], pod), MAT.bfc, true);
+      const hex = [0, 1, 2, 3, 4, 5].map((k) => [Math.cos(k * Math.PI / 3) * 1.4, Math.sin(k * Math.PI / 3) * 1.4]);
+      add(place(plateG(hex, 0.16), [0, 4.0, 0.15], [Math.PI / 2 - 0.45, 0, 0]), MAT.glass);
+      add(place(plateG(hex.map(([x, z]) => [x * 1.12, z * 1.12]), 0.12), [0, 3.93, 0.05], [Math.PI / 2 - 0.45, 0, 0]), MAT.dark);
       break;
+    }
     case 7: // jump cell canister — glowing, small
       add(merge([place(cylG(0.62, 0.62, 2.2, 16), [0, 1.1, 0]), place(cylG(0.75, 0.75, 0.25, 16), [0, 0.1, 0]), place(cylG(0.75, 0.75, 0.25, 16), [0, 2.1, 0])]), MAT.cell);
       add(merge([0.6, 1.1, 1.6].map((y) => place(cylG(0.64, 0.64, 0.12, 16), [0, y, 0]))), MAT.cellGlow);
       break;
     case 8: // capacitor bank
-      add(place(boxG(2.6, 1.8, 2.0), [0, 0.9, 0]), MAT.dark);
-      add(merge([-1, -0.5, 0, 0.5, 1].map((x) => place(boxG(0.12, 1.6, 2.2), [x, 1.0, 0]))), MAT.metal);
+      add(loftUpG([{ z: 0, w: 1.3, h: 1.0 }, { z: 1.6, w: 1.3, h: 1.0 }, { z: 1.9, w: 1.0, h: 0.75 }], { keel: 0.85, deck: 0.85, lo: -0.6, hi: 0.6, up: 1 }), MAT.bfc, true);
+      add(merge([-1, -0.5, 0, 0.5, 1].map((x) => place(boxG(0.1, 1.5, 2.3), [x, 1.0, 0]))), MAT.metal);
+      add(place(boxG(1.6, 0.08, 0.1), [0, 1.92, 1.02]), MAT.cellGlow);
       break;
     default: // truss
       add(merge([
@@ -595,8 +613,8 @@ function partPrototype(type) {
 // =====================================================================
 function hullProfile(style, r) {
   const pts = [];
-  if (style === 1) { // ARD: round hull, 20 facets
-    for (let i = 0; i < 20; i++) { const a = (i / 20) * Math.PI * 2; pts.push(new THREE.Vector2(Math.cos(a) * r, Math.sin(a) * r * 0.92)); }
+  if (style === 1) { // ARD: tall faceted hexagon with a ridge and a keel
+    for (const [x, y] of [[1, 0.12], [0.62, 0.84], [0, 0.95], [-0.62, 0.84], [-1, 0.12], [-0.8, -0.62], [0, -0.92], [0.8, -0.62]]) pts.push(new THREE.Vector2(x * r, y * r));
   } else { // TCN chamfered octagon (wide, low); BFC boxy with small chamfer
     const w = style === 0 ? r : r * 0.9, h = style === 0 ? r * 0.7 : r * 0.82, ch = style === 0 ? r * 0.3 : r * 0.12;
     pts.push(new THREE.Vector2(w, -h + ch), new THREE.Vector2(w, h - ch), new THREE.Vector2(w - ch, h), new THREE.Vector2(-w + ch, h),
@@ -861,20 +879,25 @@ function buildWreck(wi, names) {
 // =====================================================================
 function buildDrone() {
   const g = new THREE.Group();
+  // a faceted arrowhead with four swept fins; thrusters on the fin tips, one red eye
+  const fin = [[0.7, -0.9], [0.7, -2.1], [2.6, -2.9], [2.6, -2.2]];
+  const finV = fin.map(([x, z]) => [x * 0.8, z]);
   const body = new THREE.Mesh(merge([
-    place(new THREE.OctahedronGeometry(2.0, 0), [0, 0, 0], [0, 0, 0], [1, 0.75, 1.4]),
-    place(boxG(4.8, 0.3, 0.8), [0, 0, -0.5]), place(boxG(0.3, 3.8, 0.8), [0, 0, -0.5]),
+    loftG([{ z: -2.4, w: 0.9, h: 0.55 }, { z: -1.6, w: 1.5, h: 0.8 }, { z: 1.2, w: 1.4, h: 0.75 }, { z: 2.6, w: 0.6, h: 0.4, y: -0.05 }, { z: 3.1, w: 0.15, h: 0.12, y: -0.08 }],
+      { keel: 0.5, deck: 0.5, lo: -0.2, hi: 0.3, up: 0.85 }),
+    place(plateG(fin, 0.12), [0, -0.06, 0]), place(plateG(mirrorX(fin), 0.12), [0, -0.06, 0]),
+    place(finG(finV, 0.12), [0, 0.5, 0]), place(finG(finV, 0.12), [0, -0.5, 0], [0, 0, Math.PI]),
   ]), MAT.drone);
   const gun = new THREE.Mesh(place(cylG(0.18, 0.22, 3.6, 8), [0, -0.5, 2.6], [Math.PI / 2, 0, 0]), MAT.metal);
   const eyeMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(0.3, 0.01, 0.01) });
-  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.45, 12, 8), eyeMat); eye.position.set(0, 0.35, 2.55);
+  const eye = new THREE.Mesh(merge([place(boxG(0.9, 0.16, 0.5), [0, 0.32, 1.9], [0.45, 0, 0]), place(new THREE.SphereGeometry(0.22, 10, 6), [0, 0.3, 2.05])]), eyeMat);
   const jetMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
   const jetU = uniform(0);
   jetMat.colorNode = vec3(1.2, 0.45, 3.0).mul(jetU).mul(abs(normalView.z));
   const jets = [];
-  for (const [x, y] of [[2.4, 0], [-2.4, 0], [0, 1.9], [0, -1.9]]) {
+  for (const [x, y] of [[2.6, 0], [-2.6, 0], [0, 2.6], [0, -2.6]]) {
     const j = new THREE.Mesh(place(new THREE.CylinderGeometry(0.35, 0.05, 1.6, 8, 1, true), [0, 0, -0.8], [Math.PI / 2, 0, 0]), jetMat);
-    j.position.set(x, y, -1.0); g.add(j); jets.push(j);
+    j.position.set(x, y, -2.75); g.add(j); jets.push(j);
   }
   const light = new THREE.PointLight(new THREE.Color(1, 0.1, 0.05), 0, 60, 2); light.position.set(0, 0.4, 3.2);
   g.add(body, gun, eye, light);
@@ -885,29 +908,69 @@ function buildDrone() {
   return { g, eyeMat, light, jetU, ir };
 }
 
+// Rival scavengers: crews who have been out too long. Their hulls are grown from what they have
+// torn off others: plates in three navies' colours, forward-raking spikes, hook claws and drives
+// that run hot and unshielded. You should be able to tell what they are from a kilometre away.
 function buildScav() {
+  const rnd = mulberry((Math.random() * 1e9) | 0);
   const g = new THREE.Group();
-  const hull = new THREE.Mesh(merge([
-    place(boxG(5.5, 3.2, 12), [0, 0, 0]), place(boxG(3.5, 2.0, 4), [0, 1.8, 4]), place(cylG(1.6, 1.6, 6, 12), [0, -2.4, -1], [Math.PI / 2, 0, 0]),
-    place(boxG(9.0, 0.5, 2.5), [0, 0, -4]),
-  ]), MAT.scav);
-  const metal = new THREE.Mesh(merge([
-    place(bellG(1.4, 2.6), [2.8, 0, -6.0], [Math.PI / 2, 0, 0]), place(bellG(1.4, 2.6), [-2.8, 0, -6.0], [Math.PI / 2, 0, 0]),
-    place(boxG(0.4, 0.4, 7), [0, 2.6, 7]), place(boxG(0.6, 0.6, 3.0), [4.3, 0, 5]), place(boxG(0.6, 0.6, 3.0), [-4.3, 0, 5]),
-  ]), MAT.metal);
+  const sec = { keel: 0.45, deck: 0.5, lo: -0.25, hi: 0.3, up: 0.85 };
+  const core0 = loftG([{ z: -6.4, w: 2.2, h: 1.5 }, { z: -5.0, w: 2.6, h: 1.7 }, { z: 3.0, w: 2.6, h: 1.7 }, { z: 6.0, w: 1.7, h: 1.2, y: -0.15 }, { z: 8.4, w: 0.7, h: 0.5, y: -0.35 }], sec);
+  const hull = new THREE.Mesh(merge([core0, place(boxG(3.5, 1.2, 4), [0, 1.9, 1.5])]), MAT.scav);
+  const probe = hullProbe([hull]);
+  const byF = [[], [], []], dark = [], metal = [];
+  // scrap plating, welded wherever it fits
+  for (let k = 0; k < 22; k++) {
+    const a = rnd() * Math.PI * 2, z = -5.5 + rnd() * 12;
+    const n = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
+    const hit = probe(new THREE.Vector3(0, 0, z), n, 8); if (!hit) continue;
+    const pg = armorPlateG(1.0 + rnd() * 2.2, 1.4 + rnd() * 2.8, 0.14 + rnd() * 0.16, 0.1 + rnd() * 0.3, 1.0, rnd);
+    pg.rotateY((rnd() - 0.5) * 1.2).rotateX((rnd() - 0.5) * 0.3).rotateZ((rnd() - 0.5) * 0.3);
+    byF[Math.floor(rnd() * 3)].push(atMount(pg, hit.p.toArray(), hit.n.toArray(), -0.05));
+  }
+  // spikes raking forward off the bow and along the dorsal ridge
+  for (let k = 0; k < 16; k++) {
+    const a = rnd() * Math.PI * 2, z = k < 9 ? 2 + rnd() * 6 : -5 + rnd() * 7;
+    const n = new THREE.Vector3(Math.cos(a), Math.sin(a), 0);
+    const hit = probe(new THREE.Vector3(0, 0, z), n, 8); if (!hit) continue;
+    const dir = hit.n.clone().multiplyScalar(0.55).add(new THREE.Vector3(0, 0, k < 9 ? 1 : 0.35)).normalize();
+    const sp = spikeG(0.14 + rnd() * 0.16, 1.2 + rnd() * (k < 9 ? 2.6 : 1.6), 4);
+    sp.applyQuaternion(alignQ(new THREE.Vector3(0, 1, 0), dir)); sp.translate(hit.p.x, hit.p.y, hit.p.z);
+    dark.push(sp);
+  }
+  // hook claws, one longer than the other
+  for (const [sx, len] of [[1, 1], [-1, 1.35]]) {
+    dark.push(loftG([{ z: 5.0, x: 1.5 * sx, y: -0.9, w: 0.5, h: 0.6 }, { z: 8.0 * len, x: 1.5 * sx, y: -1.1, w: 0.36, h: 0.42 },
+      { z: 9.8 * len, x: 1.0 * sx, y: -0.8, w: 0.18, h: 0.22 }, { z: 10.6 * len, x: 0.4 * sx, y: -0.45, w: 0.03, h: 0.03 }], { keel: 0.4, deck: 0.4, lo: -0.3, hi: 0.3, up: 0.9 }));
+  }
+  // open drive frame
+  for (const sx of [1, -1]) {
+    metal.push(place(bellG(1.4, 2.6), [2.8 * sx, 0, -6.6], [Math.PI / 2, 0, 0]));
+    for (const sy of [1, -1]) metal.push(strutG([1.8 * sx, 1.1 * sy, -5.6], [2.8 * sx, 0.9 * sy, -6.7], 0.22));
+    dark.push(loftG([{ z: -6.9, w: 1.05, h: 1.05, x: 2.8 * sx }, { z: -6.2, w: 1.15, h: 1.15, x: 2.8 * sx }], { keel: 0.45, deck: 0.45, lo: -0.45, hi: 0.45, up: 1 }));
+  }
+  // a snapped radiator wing, still bolted on
+  const wing = merge([place(boxG(6, 0.12, 2.6), [3, 0, 0]), ...[0.8, 2.4, 4.0, 5.4].map((x) => place(boxG(0.3, 0.3, 2.7), [x, 0.1, 0]))]);
+  wing.rotateZ(-0.5).rotateY(0.2); wing.translate(2.2, 1.0, -2.5); metal.push(wing);
+  const meshes = [hull, new THREE.Mesh(merge(dark), MAT.dark), new THREE.Mesh(merge(metal), MAT.metal)];
+  byF.forEach((list, fi) => { if (list.length) meshes.push(new THREE.Mesh(merge(list), factionMat(fi))); });
+  // a slit of hot red where a cockpit should be, and drives that glow when they're cold
+  MAT.scavGlow = MAT.scavGlow || new THREE.MeshStandardMaterial({ color: '#000', emissive: new THREE.Color(4.2, 0.35, 0.12) });
+  const glow = new THREE.Mesh(merge([place(boxG(1.6, 0.14, 0.4), [0, 1.0, 6.05], [0.5, 0, 0]),
+    ...[1, -1].map((sx) => place(new THREE.TorusGeometry(0.5, 0.09, 6, 16), [2.8 * sx, 0, -6.75]))]), MAT.scavGlow);
   const lamp = new THREE.SpotLight(new THREE.Color(1, 0.9, 0.75), 6000, 200, 0.4, 0.6, 1.8); lamp.position.set(0, 1, 8);
   const tgt = new THREE.Object3D(); tgt.position.set(0, -2, 40); g.add(tgt); lamp.target = tgt;
   const beamMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
   const beamU = uniform(0);
   beamMat.colorNode = vec3(5.0, 2.2, 1.0).mul(beamU);
   const beam = new THREE.Mesh(place(new THREE.CylinderGeometry(0.1, 0.1, 1, 6, 1, true), [0, 0.5, 0], [0, 0, 0]), beamMat);
-  beam.rotation.x = Math.PI / 2; beam.position.set(0, 2.6, 10.5); beam.scale.set(1, 26, 1);
-  const red = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red.position.set(4.6, 0, 0);
-  const grn = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.green); grn.position.set(-4.6, 0, 0);
-  g.add(hull, metal, lamp, beam, red, grn);
-  [hull, metal].forEach((m) => { m.castShadow = true; m.receiveShadow = true; });
+  beam.rotation.x = Math.PI / 2; beam.position.set(0, 0.2, 9.0); beam.scale.set(1, 26, 1);
+  const red = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red.position.set(2.75, 0, 0);
+  const red2 = new THREE.Mesh(new THREE.SphereGeometry(0.2, 8, 6), MAT.red); red2.position.set(-2.75, 0, 0);
+  g.add(...meshes, glow, lamp, beam, red, red2);
+  meshes.forEach((m) => { m.castShadow = true; m.receiveShadow = true; });
   const ir = irMaterial(0.3);
-  hull.userData.ir = ir.mat; metal.userData.ir = ir.mat;
+  [...meshes, glow].forEach((m) => { m.userData.ir = ir.mat; });
   scene.add(g);
   return { g, beamU, ir };
 }
@@ -1261,6 +1324,8 @@ function addPartVisual(i) {
   const type = parts[i * P.N + P.TYPE] | 0;
   if (!PROTOS[type]) PROTOS[type] = partPrototype(type);
   const g = PROTOS[type].clone();
+  const wi = parts[i * P.N + P.WRECK] | 0;
+  if (wi >= 0 && WRECKS[wi]) paintPart(g, FACTIONS.indexOf(WRECKS[wi].faction));
   // glowing cut seam at the base
   const seamMat = new THREE.MeshStandardMaterial({ color: '#111', emissive: new THREE.Color(0, 0, 0), roughness: 0.5 });
   const pr = parts[i * P.N + P.RAD];
@@ -1270,7 +1335,6 @@ function addPartVisual(i) {
   g.traverse((o) => { if (o.isMesh) o.userData.ir = ir.mat; });
   if (toggles.ir) g.traverse((o) => { if (o.isMesh) { o.userData.vis = o.material; o.material = ir.mat; } });
   scene.add(g);
-  const wi = parts[i * P.N + P.WRECK] | 0;
   PARTS[i] = { g, seamMat, ir, type, prov: wi >= 0 ? (WRECKS[wi]?.name ?? 'unknown hulk') : 'a drone carcass', wreck: wi };
 }
 function clearWorld() {
@@ -2071,7 +2135,8 @@ async function start() {
     if (renderer.compileAsync) { try { await renderer.compileAsync(scene, camera); } catch { /* optional */ } }
     world.ready = true;
     world.direct = /direct/.test(location.search);
-    window.__dbg = { renderer, scene, camera, pipeline, THREE, core, get ship() { return ship; }, get parts() { return parts; }, get wrecks() { return wrecks; }, setIR, tac, get picks() { return game.picks; }, issueOrder, setTactical, toggles };
+    window.__dbg = { renderer, scene, camera, pipeline, THREE, core, get ship() { return ship; }, get parts() { return parts; }, get wrecks() { return wrecks; }, setIR, tac, get picks() { return game.picks; }, issueOrder, setTactical, toggles,
+      get HUB() { return HUB; }, get scavs() { return scavs; }, get drones() { return drones; }, get SAVE() { return SAVE; }, syncBays: () => syncBays(), focusBay: () => focusBay(), renderHub: () => renderHub() };
     window.addEventListener('error', (e) => console.error('UNCAUGHT', e.error && e.error.stack));
     window.addEventListener('unhandledrejection', (e) => console.error('REJECT', e.reason && e.reason.stack));
     bootStatus('Pressurising the hangar…');

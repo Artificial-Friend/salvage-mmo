@@ -10,7 +10,7 @@
 
 ## Client (`client/`)
 
-- Three plain ES modules concatenated in order (`main.js`, `graphics.js`, `surfaces.js`, `ships.js`, `hub.js`) into one page. They share one scope — a deliberate shortcut from the prototype; splitting into real modules is tracked in the roadmap.
+- Three plain ES modules concatenated in order (`main.js`, `graphics.js`, `surfaces.js`, `shipkit.js`, `ships.js`, `hub.js`) into one page. They share one scope — a deliberate shortcut from the prototype; splitting into real modules is tracked in the roadmap.
 - Rendering: Three.js `WebGPURenderer`. "Auto" uses WebGPU when the browser offers a full adapter and WebGL 2 when it only offers compatibility mode (OpenGL-backed, common on Linux). Post-processing passes run without MSAA in compatibility mode.
 - Everything visual is procedural (materials, wrecks, ships, sky), so the page is ~600 KB with no asset downloads.
 

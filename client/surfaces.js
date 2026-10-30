@@ -120,14 +120,14 @@ function hullSurface(opts) {
 function buildSurfaceMaterials() {
   const S = (o) => hullSurface(o);
   return {
-    starter: S({ base: '#bdb7a6', base2: '#c46a2b', stripe: '#d8a22a', panel: 2.4, rough: 0.5, metal: 0.25, wear: 0.45, grime: 0.35, scorch: 0.12 }),
+    starter: S({ base: '#a9a493', base2: '#c46a2b', stripe: '#d8a22a', panel: 2.4, rough: 0.5, metal: 0.25, wear: 0.45, grime: 0.35, scorch: 0.12 }),
     tcn: S({ base: '#5c656d', base2: '#424a51', stripe: '#c9c3b0', panel: 3.2, rough: 0.58, metal: 0.4, wear: 0.4, grime: 0.5, scorch: 0.42, side: THREE.DoubleSide }),
     ard: S({ base: '#7d3f2f', base2: '#522b22', stripe: '#d0c8b6', panel: 3.0, rough: 0.6, metal: 0.3, wear: 0.5, grime: 0.55, scorch: 0.45, side: THREE.DoubleSide }),
     bfc: S({ base: '#8d875a', base2: '#c88a2a', stripe: '#1c1a14', panel: 2.8, rough: 0.66, metal: 0.25, wear: 0.6, grime: 0.6, scorch: 0.35, side: THREE.DoubleSide }),
     metal: S({ base: '#9ba0a4', bare: '#c3c7ca', panel: 3.6, seam: 0.02, rough: 0.34, metal: 0.95, wear: 0.15, grime: 0.25, scorch: 0.1, bump: 0.35 }),
     dark: S({ base: '#2c3033', base2: '#1f2225', panel: 2.4, rough: 0.66, metal: 0.55, wear: 0.25, grime: 0.4, scorch: 0.3, side: THREE.DoubleSide }),
     scav: S({ base: '#c47c27', base2: '#3b3f3a', stripe: '#111111', panel: 2.6, rough: 0.6, metal: 0.3, wear: 0.5, grime: 0.45, scorch: 0.2 }),
-    racer: S({ base: '#dfe2de', base2: '#2f8fa0', stripe: '#2f8fa0', panel: 2.2, rough: 0.36, metal: 0.3, wear: 0.15, grime: 0.15, scorch: 0.06 }),
+    racer: S({ base: '#b1b5b2', base2: '#2f8fa0', stripe: '#2f8fa0', panel: 2.2, rough: 0.36, metal: 0.3, wear: 0.15, grime: 0.15, scorch: 0.06 }),
     hauler: S({ base: '#c98a2b', base2: '#59605d', stripe: '#161512', panel: 3.0, rough: 0.6, metal: 0.3, wear: 0.55, grime: 0.55, scorch: 0.15 }),
     container: S({ base: '#6e7d52', base2: '#a5492f', stripe: '#d9d4c4', panel: 1.8, seam: 0.05, rough: 0.7, metal: 0.25, wear: 0.5, grime: 0.6, scorch: 0.1 }),
     gunship: S({ base: '#4c5258', base2: '#383d42', stripe: '#d0a03a', panel: 2.8, rough: 0.5, metal: 0.45, wear: 0.3, grime: 0.35, scorch: 0.2 }),
