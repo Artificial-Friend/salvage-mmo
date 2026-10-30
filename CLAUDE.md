@@ -17,6 +17,9 @@
 - WebGPU compatibility mode (OpenGL-backed) cannot resolve multisampled post-processing passes; `msaaSamples()` returns 0 there.
 - Ships, parts and wrecks are built with `client/shipgen.js`: add detail to a `Batch` through surface frames (`Hull.frame`) so it sits on the hull, and give every design a `lod 1` path.
 - Wreck hull sections are owned by the core (`SEC_A/SEC_B/SEC_L` in `core/core.cpp`, `HULL_SECTION` in `client/shipkit.js`, mirrored in the tests). Parts, the laser and collisions use that exact shape; change all three together.
+- Wrecks carry blast breaches (`W_NBR`/`W_BRS`, box records carved out of a section). Internal fittings (reactor, jump cell, capacitor) sit on breach floors; external ones go where a ship carries them. The client cuts the same boxes out of the hull mesh.
+- Every ship design must pass `shipClearance(cls)` (also `__dbg.clearance(cls)` in the page) with zero issues: no part each mount can take may cut into the hull, a drive bell, a deployed radiator or another fitted part.
+- Ship models have two states: working and destroyed (`buildShipModel(…, { destroyed: seed })`).
 - Saves are versioned (`salvage.save.v3`); any change to the save shape needs a migration from the previous version.
 
 ## Design

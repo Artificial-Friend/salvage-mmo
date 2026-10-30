@@ -627,9 +627,10 @@ function destroyedDesign(clsId, seed) {
     B.holes = null;
     for (const h of holes) {
       // a scorched cavity behind the hole, plating peeled back round it, the odd ember
-      B.add('dark', sph(h.r * 0.95, lod ? 8 : 16, lod ? 6 : 10), T(h.c.clone().addScaledVector(h.n, -h.r * 0.35).toArray()));
-      if (lod) continue;
+      // the cavity is a cup sunk into the hull (dome pointing inward), never proud of the skin
       const fr0 = frameAtN(h.c, h.n);
+      B.add('dark', sph(h.r * 0.98, lod ? 8 : 18, lod ? 4 : 8, Math.PI / 2), frameM(fr0, -0.05).multiply(T([0, 0, 0], [Math.PI, 0, 0], [1, 0.7, 1])));
+      if (lod) continue;
       for (let k = 0; k < 9; k++) {
         const a = (k / 9) * Math.PI * 2 + rnd() * 0.5;
         const m = frameM(fr0, 0).multiply(T([Math.cos(a) * h.r * 0.9, 0.05, Math.sin(a) * h.r * 0.9], [0, -a + Math.PI / 2, 0.5 + rnd() * 0.7]));
