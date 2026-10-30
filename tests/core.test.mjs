@@ -15,7 +15,7 @@ const DT = 1 / 120;
 const S = { POS: 0, VEL: 3, QUAT: 6, PROP: 14, CARGO: 15, HULL: 16, BUS_T: 17, JF: 22, JCOST: 23, SIG: 25, HARP: 31,
   TETH_TYPE: 38, CARGO_N: 54, STATE: 52, AP_STATE: 72, AP_GOAL: 73, AP_VREL: 74, SCRAP: 78, PDC_N: 80, COIL_CD: 82,
   HULL_MAX: 85, ARMOR: 86, N: 96 };
-const P = { TYPE: 0, STATE: 1, WRECK: 2, POS: 6, VEL: 9, CUT: 21, N: 32 };
+const P = { TYPE: 0, STATE: 1, WRECK: 2, POS: 6, VEL: 9, QUAT: 12, CUT: 21, MASS: 19, N: 32 };
 const W = { POS: 0, VEL: 3, N: 68 };
 const D = { POS: 0, STATE: 6, WAKE: 22, AMMO: 29, N: 32 };
 const R = { POS: 0, VEL: 3, RAD: 6, MASS: 7, N: 8 };
@@ -46,6 +46,11 @@ function run(sec, each) {
 const pulse = (i) => { const v = views(); v.inp[i] = 1; e.step(DT); views().inp[i] = 0; };
 const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const vec = (arr, o) => [arr[o], arr[o + 1], arr[o + 2]];
+// a part's outward direction: its local +Y rotated by its world quaternion
+function partUp(parts, o) {
+  const [x, y, z, w] = [parts[o + P.QUAT], parts[o + P.QUAT + 1], parts[o + P.QUAT + 2], parts[o + P.QUAT + 3]];
+  return [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)];
+}
 // put the ship `d` metres from point p, nose on it, at rest relative to velocity v
 function faceFrom(p, dir, d, v = [0, 0, 0]) {
   const { s } = views();
@@ -102,8 +107,9 @@ test('salvage: harpoon a bolted part, cut it free, winch it into the hold', () =
     const d = dist(vec(v.parts, o + P.POS), vec(v.s, 0)); if (d < bd) { bd = d; best = i; }
   }
   const o = best * P.N;
-  const pp = vec(v.parts, o + P.POS), wc = vec(v.wrecks, 0);
-  faceFrom(pp, [pp[0] - wc[0], pp[1] - wc[1], pp[2] - wc[2]], 35, vec(v.wrecks, W.VEL));
+  // line up along the part's outward normal, the way you would approach a fitting to cut it
+  const pp = vec(v.parts, o + P.POS);
+  faceFrom(pp, partUp(v.parts, o), 35, vec(v.wrecks, W.VEL));
   pulse(IN.HARPOON); run(1);
   assert.equal(views().s[S.HARP], 2, 'harpoon set');
   run(15, () => { views().inp[IN.LASER] = 1; });
@@ -205,4 +211,79 @@ test('performance: a large zone steps in well under a millisecond', () => {
   run(10);
   const ms = (performance.now() - t0) / (10 / DT);
   assert.ok(ms < 0.5, `${ms.toFixed(3)} ms per step`);
+});
+
+// Hull sections — mirror of core/core.cpp SEC_A/SEC_B/SEC_L (and client/shipkit.js HULL_SECTION)
+const SEC_A = [0.92, 0.74, 0.84], SEC_B = [0.62, 0.86, 0.78], SEC_L = [0.85, 0.65];
+const W_SPH = 16, W_NS = 14, W_STYLE = 65, W_CLASS = 66, W_QUAT = 6;
+const qinv = (q, v) => { // rotate v by the inverse of quaternion q
+  const [x, y, z, w] = [-q[0], -q[1], -q[2], q[3]];
+  const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2], iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2];
+  return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
+};
+function hullDist(wr, w, p) {
+  const o = w * W.N, st = wr[o + W_STYLE] | 0, cl = wr[o + W_CLASS] > 0.5 ? 1 : 0;
+  const lp = qinv([wr[o + W_QUAT], wr[o + W_QUAT + 1], wr[o + W_QUAT + 2], wr[o + W_QUAT + 3]], [p[0] - wr[o], p[1] - wr[o + 1], p[2] - wr[o + 2]]);
+  let best = 1e9;
+  for (let s = 0; s < wr[o + W_NS]; s++) {
+    const c = [wr[o + W_SPH + s * 4], wr[o + W_SPH + s * 4 + 1], wr[o + W_SPH + s * 4 + 2]], r = wr[o + W_SPH + s * 4 + 3];
+    const a = r * SEC_A[st], b = r * SEC_B[st], h = r * SEC_L[cl];
+    const q = [lp[0] - c[0], lp[1] - c[1], lp[2] - c[2]];
+    const rho = Math.hypot(q[0], q[1]), k = Math.pow((q[0] / a) ** 4 + (q[1] / b) ** 4, 0.25);
+    const dr = rho < 1e-4 ? -Math.min(a, b) : rho * (1 - 1 / k), dz = Math.abs(q[2]) - h;
+    best = Math.min(best, dr > 0 && dz > 0 ? Math.hypot(dr, dz) : Math.max(dr, dz));
+  }
+  return best;
+}
+
+test('bolted parts sit flush on the hull surface, in both zones', () => {
+  for (const zone of [0, 1]) {
+    e.initZone(11, zone);
+    const v = views();
+    let n = 0;
+    for (let i = 0; i < e.partCount(); i++) {
+      const o = i * P.N; if (v.parts[o + P.STATE] !== 0 || v.parts[o + P.WRECK] < 0) continue;
+      const d = hullDist(v.wrecks, v.parts[o + P.WRECK] | 0, vec(v.parts, o + P.POS));
+      assert.ok(Math.abs(d) < 0.05, `part ${i} (zone ${zone}) is ${d.toFixed(2)} m off the hull`);
+      n++;
+    }
+    assert.ok(n > 20);
+  }
+});
+
+test('a jump cell cut free and left in the beam only drifts', () => {
+  e.initZone(7, 0);
+  let v = views();
+  let best = -1, bd = 1e9;
+  for (let i = 0; i < e.partCount(); i++) {
+    const o = i * P.N; if (v.parts[o + P.STATE] !== 0 || v.parts[o] !== 7) continue;
+    const d = dist(vec(v.parts, o + P.POS), vec(v.s, 0)); if (d < bd) { bd = d; best = i; }
+  }
+  const o = best * P.N;
+  const wv = vec(v.wrecks, (v.parts[o + P.WRECK] | 0) * W.N + W.VEL);
+  faceFrom(vec(v.parts, o + P.POS), partUp(v.parts, o), 30, wv);
+  run(12, () => { views().inp[IN.LASER] = 1; });
+  views().inp[IN.LASER] = 0;
+  v = views();
+  assert.notEqual(v.parts[o + P.STATE], 0, 'cut free');
+  const rel = dist(vec(v.parts, o + P.VEL), wv);
+  assert.ok(rel < 3, `a 400 kg cell under the beam leaves at ${rel.toFixed(1)} m/s`);
+});
+
+test('the ship meets a hulk where its hull is, not at an invisible sphere', () => {
+  e.initZone(7, 0);
+  const v = views();
+  const o = 0, st = v.wrecks[o + W_STYLE] | 0, r = v.wrecks[o + W_SPH + 3];
+  // drop straight onto the first section along its local +Y (the top of the hull)
+  const q = [v.wrecks[o + W_QUAT], v.wrecks[o + W_QUAT + 1], v.wrecks[o + W_QUAT + 2], v.wrecks[o + W_QUAT + 3]];
+  const up = (() => { const [x, y, z, w] = q; return [2 * (x * y - w * z), 1 - 2 * (x * x + z * z), 2 * (y * z + w * x)]; })();
+  const c = [v.wrecks[o + W_SPH], v.wrecks[o + W_SPH + 1], v.wrecks[o + W_SPH + 2]];
+  const cw = qinv([-q[0], -q[1], -q[2], q[3]], c); // rotate by q (inverse of inverse)
+  const top = r * SEC_B[st];
+  const wp = vec(v.wrecks, 0), wv = vec(v.wrecks, W.VEL);
+  for (let k = 0; k < 3; k++) { v.s[k] = wp[k] + cw[k] + up[k] * (top + 25); v.s[3 + k] = wv[k] - up[k] * 4; }
+  let closest = 1e9;
+  run(12, () => { closest = Math.min(closest, hullDist(views().wrecks, 0, vec(views().s, 0))); });
+  // contact happens at the ship's collision radius (6 m · 0.8) from the drawn hull
+  assert.ok(closest > 6 * 0.8 - 0.6 && closest < 6 * 0.8 + 0.6, `closest approach ${closest.toFixed(2)} m from the hull`);
 });

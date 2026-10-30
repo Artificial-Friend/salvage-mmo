@@ -642,21 +642,21 @@ function partPrototype(type) {
 // =====================================================================
 //  Wrecks: hull sections built around the core's collision spheres
 // =====================================================================
-function hullProfile(style, r) {
+// Cross-section of a hull section for a collision radius r: the core's rounded box
+// |x/a|^4 + |y/b|^4 = 1 (see HULL_SECTION), so what you see is what the laser and your hull hit.
+function hullProfile(style, r, n = 40) {
+  const a = r * HULL_SECTION.A[style], b = r * HULL_SECTION.B[style];
   const pts = [];
-  if (style === 1) { // ARD: tall faceted hexagon with a ridge and a keel
-    for (const [x, y] of [[1, 0.12], [0.62, 0.84], [0, 0.95], [-0.62, 0.84], [-1, 0.12], [-0.8, -0.62], [0, -0.92], [0.8, -0.62]]) pts.push(new THREE.Vector2(x * r, y * r));
-  } else { // TCN chamfered octagon (wide, low); BFC boxy with small chamfer
-    const w = style === 0 ? r : r * 0.9, h = style === 0 ? r * 0.7 : r * 0.82, ch = style === 0 ? r * 0.3 : r * 0.12;
-    pts.push(new THREE.Vector2(w, -h + ch), new THREE.Vector2(w, h - ch), new THREE.Vector2(w - ch, h), new THREE.Vector2(-w + ch, h),
-      new THREE.Vector2(-w, h - ch), new THREE.Vector2(-w, -h + ch), new THREE.Vector2(-w + ch, -h), new THREE.Vector2(w - ch, -h));
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * Math.PI * 2, c = Math.cos(t), sn = Math.sin(t);
+    pts.push(new THREE.Vector2(a * Math.sign(c) * Math.sqrt(Math.abs(c)), b * Math.sign(sn) * Math.sqrt(Math.abs(sn))));
   }
   return pts;
 }
 function prismG(pts, depth, z0, inner = 0, torn = 0, seed = 1, tornBack = false, uvs = UVS) {
   const shape = new THREE.Shape(pts);
   if (inner > 0) shape.holes.push(new THREE.Path(pts.map((p) => p.clone().multiplyScalar(inner)).reverse()));
-  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.35, bevelSegments: 1, steps: Math.max(1, Math.round(depth / 6)) });
+  const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: 0.35, bevelSize: 0.35, bevelOffset: -0.35, bevelSegments: 1, steps: Math.max(1, Math.round(depth / 6)) });
   const pos = g.attributes.position;
   if (torn) {
     const n = makeNoise(seed);
@@ -716,8 +716,8 @@ function buildWreck(wi, names) {
     const R0 = r * 0.86;
     const L = cap ? r * 1.3 : r * 1.7;
     const z0 = c.z - L / 2;
-    const pts = hullProfile(style, R0).map((p) => p.add(new THREE.Vector2(c.x, c.y)));
-    const centred = hullProfile(style, R0);
+    const pts = hullProfile(style, r).map((p) => p.add(new THREE.Vector2(c.x, c.y)));
+    const centred = hullProfile(style, r);
     const breached = s > 0 && s < ns - 1 && rnd() < (cap ? 0.35 : 0.5);
     const torn = s === 0 && bowTorn ? R0 * 0.6 : 0;
     const tornB = s === ns - 1 && sternTorn ? R0 * 0.6 : 0;
@@ -729,7 +729,7 @@ function buildWreck(wi, names) {
       // armor belts
       for (let k = 0; k < 2; k++) {
         const bz = z0 + L * (0.22 + k * 0.5);
-        beltG.push(prismG(hullProfile(style, R0 * 1.035).map((p) => p.add(new THREE.Vector2(c.x, c.y))), L * 0.08, bz, 0.9));
+        beltG.push(prismG(hullProfile(style, r * 1.035).map((p) => p.add(new THREE.Vector2(c.x, c.y))), L * 0.08, bz, 0.9));
       }
     } else {
       // breached: shell broken into bands with gaps, frames exposed, decks visible
@@ -763,7 +763,7 @@ function buildWreck(wi, names) {
     }
     // dead turret barbettes (decor) on top
     if (!cap && rnd() < 0.5 && !breached) {
-      const top = style === 1 ? R0 * 0.92 : (style === 0 ? R0 * 0.7 : R0 * 0.82);
+      const top = r * HULL_SECTION.B[style];
       const tz = z0 + L * (0.3 + rnd() * 0.4);
       darkG.push(place(cylG(R0 * 0.22, R0 * 0.26, 1.4, 18), [c.x, c.y + top + 0.6, tz]));
       const tilt = new THREE.Quaternion().setFromEuler(new THREE.Euler(Math.PI / 2 - 0.15 - rnd() * 0.3, (rnd() - 0.5) * 1.2, 0));
@@ -785,7 +785,7 @@ function buildWreck(wi, names) {
   const first = sph[0], last = sph[ns - 1];
   // bridge tower on the second section
   if (ns > 2 && !cap) {
-    const s1 = sph[1]; const top = style === 1 ? s1.r * 0.8 : s1.r * 0.62;
+    const s1 = sph[1]; const top = s1.r * HULL_SECTION.B[style];
     paintG.push(place(boxG(s1.r * 0.5, s1.r * 0.35, s1.r * 0.7), [s1.c.x, s1.c.y + top + s1.r * 0.17, s1.c.z]));
     darkG.push(place(boxG(s1.r * 0.52, s1.r * 0.08, s1.r * 0.2), [s1.c.x, s1.c.y + top + s1.r * 0.25, s1.c.z - s1.r * 0.3]));
   }
@@ -797,7 +797,7 @@ function buildWreck(wi, names) {
   // stern: engine block
   const eng = sternTorn ? 0 : (cap ? 4 : 2 + Math.floor(rnd() * 3));
   const sternZ = last.c.z + last.r * 0.85;
-  if (!sternTorn) darkG.push(prismG(hullProfile(style, last.r * 0.7).map((p) => p.add(new THREE.Vector2(last.c.x, last.c.y))), last.r * 0.35, sternZ));
+  if (!sternTorn) darkG.push(prismG(hullProfile(style, last.r * 0.8).map((p) => p.add(new THREE.Vector2(last.c.x, last.c.y))), last.r * 0.35, sternZ));
   for (let k = 0; k < eng; k++) {
     if (!cap && rnd() < 0.25) continue;
     const a = (k / eng) * Math.PI * 2 + 0.4;
@@ -816,7 +816,7 @@ function buildWreck(wi, names) {
     metalG.push(g);
   }
   if (cap) {
-    const top = (sp) => sp.r * 0.86 * 0.92;
+    const top = (sp) => sp.r * HULL_SECTION.B[style];
     // main battery: heavy turrets far too big to move — scenery, and a reminder of scale
     for (let s = 0; s < ns; s++) {
       const sp = sph[s]; if (s === 0 && bowTorn) continue; if (s === ns - 1 && sternTorn) continue;
@@ -862,7 +862,7 @@ function buildWreck(wi, names) {
   if (cap) {
     for (let k = 0; k < 18; k++) {
       const sp = sph[Math.floor(rnd() * ns)];
-      const { p, n } = perimeterSample(hullProfile(style, sp.r * 0.86), rnd());
+      const { p, n } = perimeterSample(hullProfile(style, sp.r), rnd());
       beaconG.push(place(new THREE.SphereGeometry(0.9, 8, 6), [sp.c.x + p.x + n.x * 1.2, sp.c.y + p.y + n.y * 1.2, sp.c.z + (rnd() - 0.5) * sp.r * 1.2]));
     }
   }
@@ -891,11 +891,11 @@ function buildWreck(wi, names) {
     const tex = decalTexture(cap ? 'ARD-0001' : number, cap ? 'HALVARD' : hullName.toUpperCase(), tint);
     const mat = new THREE.MeshStandardMaterial({ map: tex, transparent: true, roughness: 0.75, metalness: 0.1, polygonOffset: true, polygonOffsetFactor: -4, depthWrite: false });
     const { c, R0, L } = decalSpot;
-    const halfW = style === 1 ? R0 : (style === 0 ? R0 : R0 * 0.9);
-    const hgt = style === 0 ? R0 * 0.75 : R0 * 0.7;
+    const halfW = decalSpot.r * HULL_SECTION.A[style];
+    const hgt = decalSpot.r * HULL_SECTION.B[style];
     for (const side of [1, -1]) {
       const pl = new THREE.Mesh(new THREE.PlaneGeometry(L * 0.8, L * 0.2), mat);
-      pl.position.set(c.x + side * (halfW + 0.42), c.y + (style === 1 ? 0 : hgt * 0.1), c.z);
+      pl.position.set(c.x + side * (halfW + 0.06), c.y + hgt * 0.05, c.z);
       pl.rotation.y = side * Math.PI / 2;
       pl.userData.ir = IRM.cold;
       grp.add(pl);
