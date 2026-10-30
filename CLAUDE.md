@@ -11,10 +11,12 @@
 - Every new core behaviour gets a regression test in `tests/core.test.mjs`.
 
 ## Client
-- Client files share one scope and are concatenated in order: `main.js`, `graphics.js`, `surfaces.js`, `shipkit.js`, `ships.js`, `hub.js` (see `tools/build-page.mjs`).
+- Client files share one scope and are concatenated in order: `main.js`, `graphics.js`, `surfaces.js`, `shipkit.js`, `shipgen.js`, `ships.js`, `hub.js` (see `tools/build-page.mjs`).
 - Every post-processing pipeline is built by `buildPipeline()` in `graphics.js`; new effects go there with a switch in `GFX_OPTIONS` and a value in every preset.
 - Three.js is pinned (see `package.json`); the deployable page loads it from jsDelivr at that exact version.
 - WebGPU compatibility mode (OpenGL-backed) cannot resolve multisampled post-processing passes; `msaaSamples()` returns 0 there.
+- Ships, parts and wrecks are built with `client/shipgen.js`: add detail to a `Batch` through surface frames (`Hull.frame`) so it sits on the hull, and give every design a `lod 1` path.
+- Wreck hull sections are owned by the core (`SEC_A/SEC_B/SEC_L` in `core/core.cpp`, `HULL_SECTION` in `client/shipkit.js`, mirrored in the tests). Parts, the laser and collisions use that exact shape; change all three together.
 - Saves are versioned (`salvage.save.v3`); any change to the save shape needs a migration from the previous version.
 
 ## Design

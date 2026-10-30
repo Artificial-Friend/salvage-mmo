@@ -96,16 +96,16 @@ function hullSurface(opts) {
   // per-plate tint, the odd replacement plate in a second colour, primer on bare patches
   const toV = (c) => vec3(...new THREE.Color(c).toArray());
   const baseC = toV(o.base), altC = o.base2 ? toV(o.base2) : baseC, bareC = toV(o.bare);
-  const plateC = mix(baseC, altC, step(0.88, kind)).mul(rnd.mul(0.14).add(0.93));
+  const plateC = mix(baseC, altC, step(0.96, kind)).mul(rnd.mul(0.05).add(0.975));
   let paint = plateC.mul(float(1).sub(grime.mul(0.5)));
   if (o.stripe) {
     const sc = toV(o.stripe);
     const band = step(0.5, fract(uv2.x.add(uv2.y).mul(1.8)));
-    const hazard = step(0.97, kind).mul(step(0.04, pf.area));
+    const hazard = step(0.992, kind).mul(step(0.04, pf.area));
     paint = mix(paint, mix(vec3(0.045, 0.04, 0.035), sc, band), hazard);
   }
   let colorN = mix(paint, bareC.mul(rnd.mul(0.15).add(0.8)), chip.mul(0.8));
-  colorN = colorN.mul(float(1).sub(seam.mul(0.6))).mul(float(1).sub(scorch.mul(0.8)));
+  colorN = colorN.mul(float(1).sub(seam.mul(0.45))).mul(float(1).sub(scorch.mul(0.8)));
   mat.colorNode = colorN;
   const roughP = float(o.rough).add(rnd.sub(0.5).mul(0.14)).add(grime.mul(0.15));
   mat.roughnessNode = clamp(mix(roughP, float(0.42), chip).add(seam.mul(0.2)).add(scorch.mul(0.2)), 0.08, 1);

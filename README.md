@@ -26,7 +26,8 @@ Use a desktop browser with WebGPU (Chrome, Edge, or Vivaldi with Vulkan enabled 
 | `client/graphics.js` | Quality presets and settings panel, the post-processing pipeline, frame-time meter, benchmark. |
 | `client/surfaces.js` | Shader-generated hull materials: patched plating, seams, rivets, worn paint, grime, scorch. |
 | `client/shipkit.js` | Hard-surface ship geometry: faceted lofted hulls, armour plates, spikes, mount hardware, salvage accretion and provenance paint. |
-| `client/ships.js` | Hull classes, their characteristics and mount points, procedural ship models, fitted-ship → core configuration. |
+| `client/shipgen.js` | Geometry engine for ships, parts and wrecks: smooth lofted hulls through superellipse sections, one vertex stream per material, surface frames for flush detail, a detail library (hatches, RCS, windows, tanks, trusses, bells), two levels of detail. |
+| `client/ships.js` | Hull classes and their characteristics, the five ship designs, mount hardware and salvage fittings, fitted-ship → core configuration. |
 | `client/hub.js` | The hub: save data, hangar bays, fitting, shipyard, storage, market, missions. |
 | `client/shell.html` | Page markup and styles. |
 | `tools/` | Build scripts (core, page), dev server, syntax check. |

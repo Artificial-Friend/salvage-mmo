@@ -110,39 +110,6 @@ function atMount(g, pos, n, lift = 0) {
 }
 
 // ---------------------------------------------------------------------
-//  Mount hardware: every slot has a visible base; a fitted part sits on it
-// ---------------------------------------------------------------------
-const MOUNT_LIFT = { hardpoint: 0.42, engine: 0.3, utility: 0.28, structure: 0.16, core: 0.5 };
-function mountBaseG(cls, fitted) {
-  const L = [];
-  switch (cls) {
-    case 'hardpoint': // barbette ring with bolt studs; a blanking cap when empty
-      L.push(place(facetCylG(1.75, 1.55, 0.42, 10), [0, 0.21, 0]));
-      for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2 + 0.31; L.push(place(boxG(0.16, 0.12, 0.16), [Math.cos(a) * 1.45, 0.47, Math.sin(a) * 1.45])); }
-      if (!fitted) L.push(place(facetCylG(1.15, 0.9, 0.22, 10), [0, 0.53, 0]));
-      break;
-    case 'engine': // thrust pad on four braced struts
-      L.push(armorPlateG(2.6, 2.6, 0.22, 0.25));
-      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) L.push(strutG([x * 0.9, 0, z * 0.9], [x * 0.45, 0.32, z * 0.45], 0.22));
-      L.push(place(boxG(1.4, 0.12, 1.4), [0, 0.3, 0]));
-      break;
-    case 'utility': // twin rails with clamps
-      for (const x of [-0.8, 0.8]) L.push(place(boxG(0.26, 0.26, 2.9), [x, 0.13, 0]));
-      for (const z of [-1.1, 1.1]) L.push(place(boxG(2.1, 0.14, 0.34), [0, 0.2, z]));
-      break;
-    case 'structure': // weld pad with studs
-      L.push(armorPlateG(3.2, 2.6, 0.16, 0.2));
-      for (const [x, z] of [[-1.2, -0.9], [1.2, -0.9], [-1.2, 0.9], [1.2, 0.9], [0, -1.05], [0, 1.05]]) L.push(place(boxG(0.18, 0.12, 0.18), [x, 0.2, z]));
-      break;
-    case 'core': // armoured cradle
-      L.push(place(facetCylG(2.9, 2.6, 0.5, 12), [0, 0.25, 0]));
-      for (let k = 0; k < 4; k++) { const a = (k / 4) * Math.PI * 2 + Math.PI / 4; L.push(place(boxG(0.7, 1.4, 0.9), [Math.cos(a) * 2.45, 0.7, Math.sin(a) * 2.45], [0, -a, 0])); }
-      break;
-  }
-  return merge(L);
-}
-
-// ---------------------------------------------------------------------
 //  Provenance paint: a salvaged part keeps the colours of the navy that built it
 // ---------------------------------------------------------------------
 function factionIndex(prov) {
@@ -171,26 +138,4 @@ function hullProbe(meshes) {
     if (fn.dot(n) < 0.35) return null;
     return { p: hit.point, n: fn };
   };
-}
-function accretionFor(slot, seed, probe) {
-  const rnd = mulberry(seed);
-  const N = new THREE.Vector3(...slot.n).normalize();
-  const t1 = Math.abs(N.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0).cross(N).normalize();
-  const t2 = N.clone().cross(t1).normalize();
-  const out = [];
-  const count = slot.cls === 'structure' ? 2 : 3;
-  for (let k = 0; k < count; k++) {
-    const a = (k / count) * Math.PI * 2 + rnd() * 1.2;
-    const d = 1.9 + rnd() * 1.0;
-    const w = 1.1 + rnd() * 1.4, l = 1.3 + rnd() * 1.8;
-    const at = new THREE.Vector3(...slot.pos).addScaledVector(t1, Math.cos(a) * d).addScaledVector(t2, Math.sin(a) * d);
-    const hit = probe(at, N);
-    if (!hit) continue;
-    const g = armorPlateG(w, l, 0.14 + rnd() * 0.1, 0.15 + rnd() * 0.2, l * 0.35, rnd);
-    // a little tilted and sunk, as if welded on in a hurry
-    g.rotateY(rnd() * Math.PI).rotateX((rnd() - 0.5) * 0.12).rotateZ((rnd() - 0.5) * 0.12);
-    g.translate(0, -0.06, 0);
-    out.push(atMount(g, hit.p.toArray(), hit.n.toArray()));
-  }
-  return out;
 }
