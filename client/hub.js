@@ -90,7 +90,7 @@ function fittedWhere(pid) {
   }
   return null;
 }
-const fittedOf = (bay) => (bay ? Object.entries(bay.mounts).map(([slot, pid]) => { const p = partById(pid); return p ? { slot, type: p.type, mass: p.mass, id: p.id } : null; }).filter(Boolean) : []);
+const fittedOf = (bay) => (bay ? Object.entries(bay.mounts).map(([slot, pid]) => { const p = partById(pid); return p ? { slot, type: p.type, mass: p.mass, id: p.id, prov: p.prov } : null; }).filter(Boolean) : []);
 const activeBay = () => SAVE.bays[SAVE.active];
 const fmtT = (kg) => `${(kg / 1000).toFixed(1)} t`;
 
@@ -189,10 +189,10 @@ function buildHub() {
   // cool spill through the door and bounce from the deck.
   const hemiL = new THREE.HemisphereLight(new THREE.Color(0.62, 0.58, 0.52), new THREE.Color(0.16, 0.15, 0.14), 0.22);
   hs.add(hemiL);
-  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 9500, 300, 0.62, 0.6, 1.5);
+  const key = new THREE.SpotLight(new THREE.Color(1, 0.93, 0.82), 7000, 300, 0.62, 0.6, 1.5);
   key.position.set(30, BH - 4, -24); key.target.position.set(0, 12, 0); key.castShadow = true;
   key.shadow.mapSize.set(2048, 2048); key.shadow.bias = -0.0003; key.shadow.normalBias = 0.4;
-  const dock2 = new THREE.SpotLight(new THREE.Color(1, 0.95, 0.88), 9000, 300, 0.7, 0.7, 1.5);
+  const dock2 = new THREE.SpotLight(new THREE.Color(1, 0.95, 0.88), 6000, 300, 0.7, 0.7, 1.5);
   dock2.position.set(-22, BH - 4, 30); dock2.target.position.set(0, 8, 0);
   const fill = new THREE.SpotLight(new THREE.Color(0.7, 0.82, 1.0), 4500, 300, 0.8, 0.8, 1.5);
   fill.position.set(0, BH - 10, 90); fill.target.position.set(0, 4, 0);
@@ -212,7 +212,7 @@ function buildHub() {
   const shaftMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
   const shaftU = uniform(1);
   const yy = uv().y;   // 1 at the lamp, 0 at the deck
-  shaftMat.colorNode = vec3(1.0, 0.86, 0.66).mul(yy.pow(1.6).mul(0.05).add(0.006)).mul(abs(normalView.z).pow(2.2)).mul(shaftU);
+  shaftMat.colorNode = vec3(1.0, 0.86, 0.66).mul(yy.pow(1.6).mul(0.032).add(0.0035)).mul(abs(normalView.z).pow(2.2)).mul(shaftU);
   const shafts = new THREE.Group();
   for (const [x, z, r] of beams) {
     const c = new THREE.Mesh(new THREE.CylinderGeometry(1.2, r, BH - 4, 40, 1, true), shaftMat);
@@ -271,8 +271,9 @@ function updateHub(dt) {
   p.x = THREE.MathUtils.clamp(p.x, -72, 72); p.y = THREE.MathUtils.clamp(p.y, 2.5, 60); p.z = THREE.MathUtils.clamp(p.z, -92, 92);
   HUB.cam.position.copy(p); HUB.cam.lookAt(HUB.focus);
   const W = window.innerWidth, H = window.innerHeight;
-  const shift = W > 820 ? Math.min(520, W * 0.38) / 2 : 0;
-  HUB.cam.setViewOffset(W, H, shift, W > 820 ? 0 : H * 0.18, W, H);
+  const side = W > 820 && !HUB.centered;
+  const shift = side ? Math.min(520, W * 0.38) / 2 : 0;
+  HUB.cam.setViewOffset(W, H, shift, W > 820 || HUB.centered ? 0 : H * 0.18, W, H);
   // selection ring under the active bay
   const i = SAVE.active;
   const b = SAVE.bays[i];

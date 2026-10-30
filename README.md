@@ -25,6 +25,7 @@ Use a desktop browser with WebGPU (Chrome, Edge, or Vivaldi with Vulkan enabled 
 | `client/main.js` | Renderer (Three.js WebGPURenderer), procedural materials and wrecks, effects, flight HUD, tactical view, audio, input. |
 | `client/graphics.js` | Quality presets and settings panel, the post-processing pipeline, frame-time meter, benchmark. |
 | `client/surfaces.js` | Shader-generated hull materials: patched plating, seams, rivets, worn paint, grime, scorch. |
+| `client/shipkit.js` | Hard-surface ship geometry: faceted lofted hulls, armour plates, spikes, mount hardware, salvage accretion and provenance paint. |
 | `client/ships.js` | Hull classes, their characteristics and mount points, procedural ship models, fitted-ship → core configuration. |
 | `client/hub.js` | The hub: save data, hangar bays, fitting, shipyard, storage, market, missions. |
 | `client/shell.html` | Page markup and styles. |
