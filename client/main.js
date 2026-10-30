@@ -27,7 +27,8 @@ const S = { POS: 0, VEL: 3, QUAT: 6, ANG: 10, DRY: 13, PROP: 14, CARGO: 15, HULL
   SPOOLING: 65, TRACKED: 66, DETECT_R: 67, TRACK_R: 68, AP_STATE: 72, AP_GOAL: 73, AP_VREL: 74, STIR: 75, STIR_IDX: 76, AP_BURN: 77,
   SCRAP: 78, PD_ON: 79, PDC_N: 80, COIL_N: 81, COIL_CD: 82, PD_TGT: 83, PD_FIRING: 84, HULL_MAX: 85, ARMOR: 86, INTERCEPTS: 87, COIL_FLASH: 88, CARGO_LIMIT: 89, N: 96 };
 const P = { TYPE: 0, STATE: 1, WRECK: 2, POS: 6, VEL: 9, QUAT: 12, MASS: 19, RAD: 20, CUT: 21, CUTTIME: 22, VALUE: 23, HEAT: 28, N: 32 };
-const W = { POS: 0, VEL: 3, QUAT: 6, MASS: 13, NS: 14, SEED: 15, SPH: 16, BR: 64, STYLE: 65, CLASS: 66, TORN: 67, N: 68 };
+const W = { POS: 0, VEL: 3, QUAT: 6, MASS: 13, NS: 14, SEED: 15, SPH: 16, BR: 64, STYLE: 65, CLASS: 66, TORN: 67, NBR: 68, BRS: 69, N: 96 };
+const BRN = 6; // breach record: section, angle, centre z, half-length, half-width, floor distance from the axis
 const LIM = { parts: 400, wrecks: 24, rocks: 900, drones: 12, scavs: 4 };
 const R = { POS: 0, RAD: 6, N: 8 };
 const D = { POS: 0, VEL: 3, STATE: 6, HP: 7, ALERT: 17, FLASH: 18, QUAT: 24, SUSP: 28, AMMO: 29, N: 32 };
@@ -578,6 +579,9 @@ function buildMaterials() {
 function partPrototype(type) {
   const B = new Batch(0);
   const X = [0, 0, Math.PI / 2], Q90 = [Math.PI / 2, 0, 0];
+  // built at reference size, then scaled to the fitting's real dimensions (core partRadius)
+  const K = { 2: 0.7, 3: 0.75, 4: 0.76, 6: 0.68 }[type] || 1;
+  B.push(T([0, 0, 0], null, K));
   const flange = (r, h = 0.18) => { B.add('dark', cyl(r, r * 1.04, h, 24), T([0, h / 2, 0])); for (let k = 0; k < 10; k++) { const a = (k / 10) * Math.PI * 2; B.add('metal', cyl(0.06, 0.06, 0.07, 6), T([Math.cos(a) * r * 0.86, h + 0.03, Math.sin(a) * r * 0.86])); } };
   switch (type) {
     case 0: { // composite armour applique: two bevelled layers with a sloped glacis and bolt rows
@@ -589,12 +593,12 @@ function partPrototype(type) {
       break;
     }
     case 1: { // radiator: coolant manifold, twin feed booms and a ribbed panel
-      flange(0.55);
-      for (const x of [-0.18, 0.18]) B.add('metal', cyl(0.09, 0.09, 1.9, 8), T([x, 1.1, 0]));
-      B.add('dark', rbox(0.7, 0.32, 0.5, 0.08), T([0, 2.05, 0]));
-      B.add('rad', rbox(6.8, 0.08, 3.4, 0.03), T([0, 2.2, 0]));
-      for (let k = 0; k < 6; k++) B.add('rad', rbox(6.8, 0.16, 0.06, 0.02), T([0, 2.24, -1.45 + k * 0.58]));
-      B.add('dark', rbox(6.9, 0.22, 0.22, 0.06), T([0, 2.22, 1.72]));
+      flange(0.45);
+      for (const x of [-0.15, 0.15]) B.add('metal', cyl(0.07, 0.07, 1.0, 8), T([x, 0.65, 0]));
+      B.add('dark', rbox(0.6, 0.26, 0.42, 0.07), T([0, 1.2, 0]));
+      B.add('rad', rbox(4.6, 0.07, 2.4, 0.03), T([0, 1.35, 0]));
+      for (let k = 0; k < 5; k++) B.add('rad', rbox(4.6, 0.13, 0.05, 0.02), T([0, 1.38, -0.96 + k * 0.48]));
+      B.add('dark', rbox(4.7, 0.18, 0.18, 0.05), T([0, 1.37, 1.22]));
       break;
     }
     case 2: { // aux thruster: gimbal block, turbopump, feed lines, bell with cooling rings (fires along +Y)
@@ -756,8 +760,7 @@ function buildWreck(wi, names) {
     sec.push({ c, r, a: r * SA, b: r * SB, h: r * SL });
   }
   const tornBits = wrecks[o + W.TORN] | 0;
-  const bowTorn = cap ? (tornBits & 1) !== 0 : rnd() < 0.55;
-  const sternTorn = cap && (tornBits & 2) !== 0;
+  const bowTorn = (tornBits & 1) !== 0, sternTorn = (tornBits & 2) !== 0;
   const gs = cap ? 2.4 : 1;   // detail scale
   // salvage bolted to this hull: details keep clear of it
   const keep = [];
@@ -767,6 +770,29 @@ function buildWreck(wi, names) {
     keep.push({ p: new THREE.Vector3(parts[po + 3], parts[po + 4], parts[po + 5]), r: parts[po + P.RAD] });
   }
   const clear = (p, extra = 1.5) => !keep.some((k) => k.p.distanceTo(p) < k.r + extra);
+  // blast breaches, exactly as the core carved them
+  const breaches = [];
+  for (let i = 0; i < (wrecks[o + W.NBR] | 0); i++) {
+    const q = o + W.BRS + i * BRN;
+    breaches.push({ s: wrecks[q] | 0, ang: wrecks[q + 1], z: wrecks[q + 2], hl: wrecks[q + 3], hw: wrecks[q + 4], fl: wrecks[q + 5] });
+  }
+  const bframe = (S, B, x, y, z) => { const qx = x - S.c.x, qy = y - S.c.y, ca = Math.cos(B.ang), sa = Math.sin(B.ang); return [qx * ca + qy * sa, -qx * sa + qy * ca, z - B.z]; };
+  const hash = (x, y) => { const v = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return v - Math.floor(v); };
+  // inside a breach's opening, with a ragged edge (margin widens it, for keeping details away)
+  const inBreach = (s, x, y, z, margin = 0) => breaches.some((B) => {
+    if (B.s !== s) return false;
+    const S = sec[s], [u, v, w] = bframe(S, B, x, y, z);
+    const rag = (hash(Math.round(v * 1.5), Math.round(w * 1.5)) - 0.3) * Math.min(B.hw, B.hl) * 0.35;
+    return u > B.fl - 0.05 && Math.abs(v) < B.hw + rag + margin && Math.abs(w) < B.hl + rag + margin;
+  });
+  // where a line from the breach floor outward meets the hull skin
+  const skinU = (S, B, v) => {
+    const ca = Math.cos(B.ang), sa = Math.sin(B.ang);
+    let lo = B.fl, hi = 2 * Math.max(S.a, S.b);
+    for (let k = 0; k < 24; k++) { const m = (lo + hi) / 2, x = m * ca - v * sa, y = m * sa + v * ca; if ((x / S.a) ** 4 + (y / S.b) ** 4 < 1) lo = m; else hi = m; }
+    return lo;
+  };
+  const fromB = (S, B, u, v, w) => { const ca = Math.cos(B.ang), sa = Math.sin(B.ang); return new THREE.Vector3(S.c.x + u * ca - v * sa, S.c.y + u * sa + v * ca, B.z + w); };
   const BB = [new Batch(0), new Batch(1)];
   const all = (fn) => BB.forEach((B) => fn(B));
   const embers = [], beacons = [];
@@ -776,58 +802,93 @@ function buildWreck(wi, names) {
     const z0 = c.z - h, z1 = c.z + h;
     const st = (z, k = 1) => ({ z, a: a * k, b: b * k, x: c.x, y: c.y, e: 4 });
     const tornLo = s === 0 && bowTorn, tornHi = s === ns - 1 && sternTorn;
-    const breached = s > 0 && s < ns - 1 && rnd() < (cap ? 0.35 : 0.5);
     const hull = new Hull([st(z0, tornLo ? 1 : 0.94), st(z0 + 0.5 * gs), st(z1 - 0.5 * gs), st(z1, tornHi ? 1 : 0.94)], cap ? 96 : 48);
-    if (!breached) {
-      all((B) => B.add('paint', hull.raw(B.lod, [!tornLo, !tornHi])));
-      if (!decalSpot || r > decalSpot.r) decalSpot = { c, r, L: 2 * h };
-      // armour belts
-      for (const f of [0.22, 0.72]) all((B) => B.add('dark', loftRaw([st(z0 + 2 * h * f, 1.02), st(z0 + 2 * h * f + 2 * h * 0.07, 1.02)], B.lod ? 12 : 48)));
-      // torn ends: jagged plates round an open rim, the interior glowing where it still burns
-      for (const [torn, zEnd, dir] of [[tornLo, z0, -1], [tornHi, z1, 1]]) {
-        if (!torn) continue;
-        all((B) => B.add('dark', loftRaw([st(zEnd - dir * 2.5 * gs, 0.9), st(zEnd - dir * 1.0 * gs, 0.9)], B.lod ? 12 : 40), null));
-        for (let k = 0; k < (cap ? 28 : 14); k++) {
-          const ang = rnd() * Math.PI * 2, f = hull.frame(zEnd - dir * 0.3, ang);
-          const len = (1 + rnd() * 3.5) * gs;
-          const m = frameM(f, -0.2 * gs, 0).multiply(T([0, 0, dir * len * 0.4], [dir * (0.3 + rnd() * 0.6), 0, (rnd() - 0.5) * 0.6]));
-          all((B) => B.add(rnd() < 0.6 ? 'paint' : 'dark', rbox((0.8 + rnd() * 2) * gs, 0.25 * gs, len, 0.08 * gs, B.lod), m));
-        }
-        for (let k = 0; k < 6; k++) embers.push([c.x + (rnd() - 0.5) * a * 1.4, c.y + (rnd() - 0.5) * b * 1.4, zEnd - dir * 1.5 * gs, (1 + rnd() * 3) * gs]);
+    const holes = breaches.filter((B) => B.s === s);
+    const cutOpts = holes.length ? { cut: (x, y, z) => inBreach(s, x, y, z), zStep: cap ? 2.0 : 0.7 } : null;
+    all((B) => B.add('paint', hull.raw(B.lod, [!tornLo, !tornHi], cutOpts)));
+    if (!holes.length && (!decalSpot || r > decalSpot.r)) decalSpot = { c, r, L: 2 * h };
+    // armour belts
+    for (const f of [0.22, 0.72]) all((B) => B.add('dark', loftRaw([st(z0 + 2 * h * f, 1.02), st(z0 + 2 * h * f + 2 * h * 0.07, 1.02)], B.lod ? 12 : 48, [true, true], holes.length ? { cut: (x, y, z) => inBreach(s, x, y, z, 0.3), zStep: 0.5 } : null)));
+    // breaches: the floor the fittings stand on, walls up to the skin, broken frames and decks,
+    // hanging cable, scorched and bent plating round the rim
+    for (const Bh of holes) {
+      const n = Math.max(6, Math.round((2 * Bh.hl) / (cap ? 2.5 : 0.9)));
+      const wsamp = (k) => -Bh.hl + (2 * Bh.hl * k) / n;
+      const ca = Math.cos(Bh.ang), sa = Math.sin(Bh.ang);
+      const floorM = frameM(frameAtN(fromB(S, Bh, Bh.fl, 0, 0), new THREE.Vector3(ca, sa, 0)), 0);
+      all((B) => B.add('dark', rbox(2 * Bh.hw, 0.3 * gs, 2 * Bh.hl, 0.1, B.lod), T([0, -0.15 * gs, 0]).premultiply(floorM)));
+      for (const sv of [-1, 1]) {
+        const A = [], C = [];
+        for (let k = 0; k <= n; k++) { const w = wsamp(k); A.push(fromB(S, Bh, Bh.fl, sv * Bh.hw, w)); C.push(fromB(S, Bh, skinU(S, Bh, sv * Bh.hw), sv * Bh.hw, w)); }
+        all((B) => B.add('dark', stripRaw(A, C)));
       }
-      // the ship it was: panels, dark ports, hatches, vents, RCS, antennas and sensor blisters
+      for (const sw of [-1, 1]) {
+        const A = [], C = [], m = Math.max(4, Math.round((2 * Bh.hw) / (cap ? 2.5 : 0.9)));
+        for (let k = 0; k <= m; k++) { const v = -Bh.hw + (2 * Bh.hw * k) / m; A.push(fromB(S, Bh, Bh.fl, v, sw * Bh.hl)); C.push(fromB(S, Bh, skinU(S, Bh, v), v, sw * Bh.hl)); }
+        all((B) => B.add('dark', stripRaw(A, C)));
+      }
       const B0 = BB[0];
-      const tryAt = (z, ang, fn, extra) => { const f = hull.frame(z, ang); if (clear(f.o, extra)) fn(f); };
-      const nPanels = cap ? 26 : 7;
-      for (let k = 0; k < nPanels; k++) tryAt(z0 + h * 0.2 + rnd() * h * 1.6, rnd() * Math.PI * 2, (f) => DETAIL.panel(B0, f, (1.4 + rnd() * 1.6) * gs, (2 + rnd() * 2.5) * gs, 0.1 * gs, rnd() < 0.7 ? 'paint' : 'dark'), 2.5 * gs);
-      for (const side of [0.3, Math.PI - 0.3]) {
-        if (rnd() < (cap ? 0.95 : 0.6)) for (let zz = z0 + h * 0.35; zz < z1 - h * 0.35; zz += 5 * gs) tryAt(zz, side, (f) => DETAIL.windows(B0, f, 4, 0.42 * gs, 0.28 * gs, 0.4 * gs, true, rnd() < 0.08 ? 'glow' : 'glass'), 1.6 * gs);
+      const depth = skinU(S, Bh, 0) - Bh.fl;
+      for (let k = 1; k < n; k += 2) {
+        const w = wsamp(k);
+        const mid = fromB(S, Bh, Bh.fl + depth * (0.45 + rnd() * 0.3), 0, w);
+        if (!clear(mid, 1.2 * gs)) continue;
+        // a frame beam across the opening, sometimes snapped
+        const snapped = rnd() < 0.4;
+        const len = 2 * Bh.hw * (snapped ? 0.35 + rnd() * 0.3 : 1);
+        const m = frameM(frameAtN(fromB(S, Bh, Bh.fl + depth * 0.55, snapped ? Bh.hw * (rnd() < 0.5 ? 0.6 : -0.6) : 0, w), new THREE.Vector3(ca, sa, 0)), 0, Math.PI / 2);
+        B0.add('metal', rbox(0.25 * gs, 0.35 * gs, len, 0.05 * gs), snapped ? m.multiply(T([0, 0, 0], [0.4 * (rnd() - 0.5), 0, 0])) : m);
       }
-      if (rnd() < 0.7) tryAt(c.z + (rnd() - 0.5) * h, rnd() < 0.5 ? 0 : Math.PI, (f) => DETAIL.hatch(B0, f, 1.0 * gs, 1.5 * gs), 2 * gs);
-      if (rnd() < 0.6) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2 + (rnd() - 0.5), (f) => DETAIL.vent(B0, f, 1.6 * gs, 1.1 * gs), 2 * gs);
-      if (rnd() < 0.5) tryAt(c.z + (rnd() - 0.5) * h, Math.PI / 2 + (rnd() - 0.5) * 0.8, (f) => DETAIL.antenna(B0, f, (1.5 + rnd() * 2.5) * gs), 1.5 * gs);
-      if (rnd() < 0.4) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2, (f) => DETAIL.blister(B0, f, 0.7 * gs), 2 * gs);
-      if (s === 0 || s === ns - 1) for (const ang of [0.8, Math.PI - 0.8, -0.8, Math.PI + 0.8]) tryAt(s === 0 ? z0 + 1.2 * gs : z1 - 1.2 * gs, ang, (f) => DETAIL.rcs(B0, f, gs), 1.5 * gs);
-      if (cap) for (const ang of [0.95, Math.PI - 0.95]) for (let zz = z0 + 6; zz < z1 - 6; zz += 14) tryAt(zz, ang, (f) => { const m = frameM(f); B0.add('dark', sph(0.9 * gs * 0.5, 14, 6, Math.PI / 2), m); }, 3);
-    } else {
-      // breached: the shell is broken into bands; frames, decks and spars show through the gaps
-      let z = z0;
-      while (z < z1 - 1) {
-        const band = 2 * h * (0.15 + rnd() * 0.3), gap = 2 * h * (0.06 + rnd() * 0.14);
-        if (z + band > z1) break;
-        const bz = z;
-        all((B) => B.add('paint', loftRaw([st(bz), st(bz + band)], B.lod ? 12 : 48, [false, false])));
-        z += band;
-        for (let f = 0; f < 2; f++) { const fz = z + gap * (0.25 + f * 0.5); all((B) => B.add('metal', loftRaw([st(fz, 0.97), st(fz + 0.5 * gs, 0.97)], B.lod ? 10 : 40, [false, false]))); }
-        z += gap;
+      // a deck that ran through here, broken off
+      if (depth > 3 * gs && rnd() < 0.7) {
+        const dm = frameM(frameAtN(fromB(S, Bh, Bh.fl + depth * 0.5, -Bh.hw * 0.5, -Bh.hl * 0.3), new THREE.Vector3(-sa, ca, 0)), 0);
+        if (clear(fromB(S, Bh, Bh.fl + depth * 0.5, -Bh.hw * 0.5, -Bh.hl * 0.3), 1.5 * gs)) B0.add('dark', rbox(depth * 0.6, 0.12 * gs, Bh.hl * 1.2, 0.04), dm);
       }
-      all((B) => { B.add('dark', rbox(a * 1.7, 0.35 * gs, h * 1.9, 0.1, B.lod), T([c.x, c.y - b * 0.22, c.z])); B.add('dark', rbox(a * 1.5, 0.35 * gs, h * 1.8, 0.1, B.lod), T([c.x, c.y + b * 0.3, c.z])); });
-      for (let k = 0; k < 6; k++) {
-        const q = new THREE.Quaternion().setFromEuler(new THREE.Euler(rnd() * 3, rnd() * 3, rnd() * 3));
-        BB[0].add('metal', rbox(0.3 * gs, 0.3 * gs, r * (0.5 + rnd()), 0.05), T([c.x + (rnd() - 0.5) * a, c.y + (rnd() - 0.5) * b, c.z + (rnd() - 0.5) * h * 2], q));
+      for (let k = 0; k < 3; k++) {
+        const v0 = (rnd() - 0.5) * 2 * Bh.hw, w0 = (rnd() - 0.5) * 2 * Bh.hl;
+        const a0 = fromB(S, Bh, skinU(S, Bh, v0) - 0.2, v0, w0), a1 = fromB(S, Bh, Bh.fl + depth * (0.3 + rnd() * 0.3), v0 * 0.6, w0 + (rnd() - 0.5) * 2);
+        if (clear(a1, 1.0 * gs)) B0.add('dark', pipeRaw([a0.toArray(), a0.clone().lerp(a1, 0.5).add(new THREE.Vector3(0, 0, 0.3)).toArray(), a1.toArray()], 0.06 * gs, 6));
       }
-      if (cap) for (let k = 0; k < 4; k++) embers.push([c.x + (rnd() - 0.5) * a, c.y + (rnd() - 0.5) * b * 0.8, c.z + (rnd() - 0.5) * h * 1.6, (1.5 + rnd() * 3) * gs]);
+      // bent plates round the rim, peeled outward by the blast
+      for (let k = 0; k < (cap ? 18 : 10); k++) {
+        const side = k % 4, f = rnd() * 2 - 1;
+        const v = side < 2 ? (side ? 1 : -1) * Bh.hw : f * Bh.hw, w = side < 2 ? f * Bh.hl : (side === 2 ? 1 : -1) * Bh.hl;
+        const P0 = fromB(S, Bh, skinU(S, Bh, v), v, w);
+        const fr0 = frameAtN(P0, new THREE.Vector3(ca, sa, 0));
+        const outward = new THREE.Vector3(-sa * Math.sign(v || 1) * (side < 2 ? 1 : 0), ca * Math.sign(v || 1) * (side < 2 ? 1 : 0), side >= 2 ? Math.sign(w) : 0);
+        const L = (0.6 + rnd() * 1.4) * gs;
+        const m = frameM(fr0, 0).multiply(T([0, 0.1 * gs, 0], [0.5 + rnd() * 0.6, rnd() * Math.PI, 0]));
+        all((B) => B.add(rnd() < 0.5 ? 'paint' : 'dark', rbox((0.6 + rnd()) * gs, 0.12 * gs, L, 0.04, B.lod), m));
+        if (rnd() < 0.35) embers.push([P0.x + outward.x * 0.3, P0.y + outward.y * 0.3, P0.z + outward.z * 0.3, 0.5 * gs]);
+      }
+      if (rnd() < 0.6) { const ep = fromB(S, Bh, Bh.fl + 0.4, (rnd() - 0.5) * Bh.hw, (rnd() - 0.5) * Bh.hl); if (clear(ep, 1)) embers.push([ep.x, ep.y, ep.z, (0.8 + rnd()) * gs]); }
     }
+    // torn ends: jagged plates round an open rim, the interior glowing where it still burns
+    for (const [torn, zEnd, dir] of [[tornLo, z0, -1], [tornHi, z1, 1]]) {
+      if (!torn) continue;
+      all((B) => B.add('dark', loftRaw([st(zEnd - dir * 2.5 * gs, 0.9), st(zEnd - dir * 1.0 * gs, 0.9)], B.lod ? 12 : 40), null));
+      for (let k = 0; k < (cap ? 28 : 14); k++) {
+        const ang = rnd() * Math.PI * 2, f = hull.frame(zEnd - dir * 0.3, ang);
+        const len = (1 + rnd() * 3.5) * gs;
+        const m = frameM(f, -0.2 * gs, 0).multiply(T([0, 0, dir * len * 0.4], [dir * (0.3 + rnd() * 0.6), 0, (rnd() - 0.5) * 0.6]));
+        all((B) => B.add(rnd() < 0.6 ? 'paint' : 'dark', rbox((0.8 + rnd() * 2) * gs, 0.25 * gs, len, 0.08 * gs, B.lod), m));
+      }
+      for (let k = 0; k < 6; k++) embers.push([c.x + (rnd() - 0.5) * a * 1.4, c.y + (rnd() - 0.5) * b * 1.4, zEnd - dir * 1.5 * gs, (1 + rnd() * 3) * gs]);
+    }
+    // the ship it was: panels, dark ports, hatches, vents, RCS, antennas and sensor blisters
+    const B0 = BB[0];
+    const tryAt = (z, ang, fn, extra) => { const f = hull.frame(z, ang); if (clear(f.o, extra) && !inBreach(s, f.o.x, f.o.y, f.o.z, extra + 0.5)) fn(f); };
+    const nPanels = cap ? 26 : 7;
+    for (let k = 0; k < nPanels; k++) tryAt(z0 + h * 0.2 + rnd() * h * 1.6, rnd() * Math.PI * 2, (f) => DETAIL.panel(B0, f, (1.4 + rnd() * 1.6) * gs, (2 + rnd() * 2.5) * gs, 0.1 * gs, rnd() < 0.7 ? 'paint' : 'dark'), 2.5 * gs);
+    for (const side of [0.3, Math.PI - 0.3]) {
+      if (rnd() < (cap ? 0.95 : 0.6)) for (let zz = z0 + h * 0.35; zz < z1 - h * 0.35; zz += 5 * gs) tryAt(zz, side, (f) => DETAIL.windows(B0, f, 4, 0.42 * gs, 0.28 * gs, 0.4 * gs, true, rnd() < 0.08 ? 'glow' : 'glass'), 1.6 * gs);
+    }
+    if (rnd() < 0.7) tryAt(c.z + (rnd() - 0.5) * h, rnd() < 0.5 ? 0 : Math.PI, (f) => DETAIL.hatch(B0, f, 1.0 * gs, 1.5 * gs), 2 * gs);
+    if (rnd() < 0.6) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2 + (rnd() - 0.5), (f) => DETAIL.vent(B0, f, 1.6 * gs, 1.1 * gs), 2 * gs);
+    if (rnd() < 0.5) tryAt(c.z + (rnd() - 0.5) * h, Math.PI / 2 + (rnd() - 0.5) * 0.8, (f) => DETAIL.antenna(B0, f, (1.5 + rnd() * 2.5) * gs), 1.5 * gs);
+    if (rnd() < 0.4) tryAt(c.z + (rnd() - 0.5) * h, -Math.PI / 2, (f) => DETAIL.blister(B0, f, 0.7 * gs), 2 * gs);
+    if (s === 0 || s === ns - 1) for (const ang of [0.8, Math.PI - 0.8, -0.8, Math.PI + 0.8]) tryAt(s === 0 ? z0 + 1.2 * gs : z1 - 1.2 * gs, ang, (f) => DETAIL.rcs(B0, f, gs), 1.5 * gs);
+    if (cap) for (const ang of [0.95, Math.PI - 0.95]) for (let zz = z0 + 6; zz < z1 - 6; zz += 14) tryAt(zz, ang, (f) => { const m = frameM(f); B0.add('dark', sph(0.9 * gs * 0.5, 14, 6, Math.PI / 2), m); }, 3);
     // a structural collar to the next section
     if (s < ns - 1) {
       const N2 = sec[s + 1];
@@ -846,17 +907,13 @@ function buildWreck(wi, names) {
     all((B) => B.add('metal', cyl(0.4 * gs, 0.6 * gs, first.r * 0.4, 10), T([first.c.x, first.c.y - first.b * 0.1, z0 - first.r * 0.68], [Math.PI / 2, 0, 0])));
     if (!cap) DETAIL.windows(BB[0], nose.frame(z0 - first.r * 0.2, Math.PI / 2 - 0.25), 5, 0.4, 0.3, 0.12, false, 'glass');
   }
-  // stern: the engine block and its bells
+  // stern: the main drive on the aft face of the engineering section; auxiliary thrusters
+  // (salvage) are bolted round it
   if (!sternTorn) {
-    const z1 = last.c.z + last.h;
-    all((B) => B.add('dark', loftRaw([{ z: z1 - 0.2, a: last.a * 0.85, b: last.b * 0.85, x: last.c.x, y: last.c.y, e: 4 }, { z: z1 + last.r * 0.3, a: last.a * 0.75, b: last.b * 0.75, x: last.c.x, y: last.c.y, e: 4 }], B.lod ? 12 : 48)));
-    const eng = cap ? 4 : 2 + Math.floor(rnd() * 3);
-    for (let k = 0; k < eng; k++) {
-      if (!cap && rnd() < 0.25) continue;
-      const ang = (k / eng) * Math.PI * 2 + 0.4;
-      const off = eng === 1 ? [0, 0] : [Math.cos(ang) * last.a * 0.42, Math.sin(ang) * last.b * 0.38];
-      all((B) => B.within(T([last.c.x + off[0], last.c.y + off[1], z1 + last.r * 0.3], [0, Math.PI, 0]), () => DETAIL.bell(B, [0, 0, 0], last.r * 0.26, last.r * 0.7)));
-    }
+    const z1 = last.c.z + last.h, rr = Math.min(last.a, last.b);
+    all((B) => B.add('dark', cyl(rr * 0.42, rr * 0.42, 0.4 * gs, B.lod ? 16 : 40), T([last.c.x, last.c.y, z1 + 0.2 * gs], [Math.PI / 2, 0, 0])));
+    all((B) => B.within(T([last.c.x, last.c.y, z1 + 0.4 * gs], [0, Math.PI, 0]), () => DETAIL.bell(B, [0, 0, 0], rr * 0.3, rr * 0.75)));
+    if (!cap) DETAIL.bolts(BB[0], frameAtN(new THREE.Vector3(last.c.x, last.c.y, z1), new THREE.Vector3(0, 0, 1)), rr * 0.5, 16, 0.1);
   }
   // bridge tower on the second section
   if (ns > 2 && !cap) {
@@ -2183,6 +2240,14 @@ function endRun(extracted, cause = 0) {
   } else {
     for (let k = 0; k < 220; k++) spawnSpark(SPARKS, pShip, new THREE.Vector3().randomDirection().multiplyScalar(5 + Math.random() * 40), 1 + Math.random() * 2, new THREE.Color(6, 2.4, 0.7));
     flash(FLASH, pShip, 30000); thud(1, 90);
+    // what is left of the ship: the same hull, holed and dark, drifting where it died
+    if (SHIP && !SHIP.dead) {
+      const dead = buildShipModel(SHIP.cls, SHIP.fitted || [], scene, { destroyed: (Math.random() * 1e9) | 0, noLights: false });
+      dead.grp.position.copy(SHIP.grp.position); dead.grp.quaternion.copy(SHIP.grp.quaternion);
+      disposeShipModel(SHIP); SHIP = dead;
+      if (toggles.ir) setIR(true);
+      spawnShards(SHARDS, pShip, 40, 14, 1.6 * (SHIP.camScale || 1));
+    }
   }
 }
 // =====================================================================
@@ -2282,7 +2347,7 @@ async function start() {
     world.ready = true;
     world.direct = /direct/.test(location.search);
     window.__dbg = { renderer, scene, camera, pipeline, THREE, core, get ship() { return ship; }, get parts() { return parts; }, get wrecks() { return wrecks; }, setIR, tac, get picks() { return game.picks; }, issueOrder, setTactical, toggles,
-      get HUB() { return HUB; }, get scavs() { return scavs; }, get drones() { return drones; },
+      get HUB() { return HUB; }, get scavs() { return scavs; }, get drones() { return drones; }, buildShip: (c, f, o) => buildShipModel(c, f, HUB.scene, o), fittedOf: (b) => fittedOf(b), clearance: (c) => shipClearance(c), get shipModel() { return SHIP; },
       fx: (p, kind) => { const v = new THREE.Vector3(...p); if (kind === 'detach') { for (let k = 0; k < 40; k++) spawnSpark(SPARKS, v, new THREE.Vector3().randomDirection().multiplyScalar(6 + Math.random() * 14), 0.6 + Math.random(), new THREE.Color(4, 1.6, 0.5)); spawnPuff(PUFFS, v, new THREE.Vector3(), 0.5, 7, 0.45, new THREE.Color(3.2, 2.2, 1.6)); spawnShards(SHARDS, v, 14, 5, 1.2); } else { for (let k = 0; k < 3; k++) spawnSpark(SPARKS, v, new THREE.Vector3().randomDirection().multiplyScalar(3 + Math.random() * 9), 0.25 + Math.random() * 0.5, new THREE.Color(5, 1.8, 0.6)); spawnPuff(PUFFS, v, new THREE.Vector3().randomDirection().multiplyScalar(2), 0.25, 3.2, 0.25, new THREE.Color(2.6, 2.1, 1.7)); } }, get SAVE() { return SAVE; }, syncBays: () => syncBays(), focusBay: () => focusBay(), renderHub: () => renderHub() };
     window.addEventListener('error', (e) => console.error('UNCAUGHT', e.error && e.error.stack));
     window.addEventListener('unhandledrejection', (e) => console.error('REJECT', e.reason && e.reason.stack));

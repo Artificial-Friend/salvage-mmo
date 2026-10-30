@@ -46,9 +46,19 @@ class Batch {
     const M = m ? _m4.copy(this.m).multiply(m) : this.m;
     _n3.getNormalMatrix(M);
     const { p, n } = g;
-    for (let i = 0; i < p.length; i += 3) {
-      _v.set(p[i], p[i + 1], p[i + 2]).applyMatrix4(M); st.p.push(_v.x, _v.y, _v.z);
-      _w.set(n[i], n[i + 1], n[i + 2]).applyMatrix3(_n3).normalize(); st.n.push(_w.x, _w.y, _w.z);
+    const H = this.holes;
+    for (let i = 0; i < p.length; i += 9) {
+      const tri = [];
+      for (let k = 0; k < 9; k += 3) tri.push(new THREE.Vector3(p[i + k], p[i + k + 1], p[i + k + 2]).applyMatrix4(M));
+      // blast holes (destroyed ships): drop triangles inside a ragged sphere round each hole
+      if (H) {
+        const c = tri[0].clone().add(tri[1]).add(tri[2]).multiplyScalar(1 / 3);
+        if (H.some((h) => { const d = c.distanceTo(h.c); if (d > h.r * 1.4) return false; const rag = Math.sin(c.x * 3.1 + c.z * 2.3) * Math.cos(c.y * 2.7 - c.z * 1.9); return d < h.r * (0.85 + 0.3 * rag); })) continue;
+      }
+      for (let k = 0; k < 3; k++) {
+        st.p.push(tri[k].x, tri[k].y, tri[k].z);
+        _w.set(n[i + k * 3], n[i + k * 3 + 1], n[i + k * 3 + 2]).applyMatrix3(_n3).normalize(); st.n.push(_w.x, _w.y, _w.z);
+      }
     }
     return this;
   }
@@ -80,7 +90,21 @@ function seRing(st, seg) {
   }
   return pts;
 }
-function loftRaw(stations, seg = 32, caps = [true, true]) {
+// opts.cut(x, y, z) → true drops the triangle there (blast holes); opts.zStep subdivides along Z
+// so a hole can be cut with a ragged edge
+function loftRaw(stations, seg = 32, caps = [true, true], opts = null) {
+  if (opts && opts.zStep) {
+    const S = [stations[0]];
+    for (let i = 1; i < stations.length; i++) {
+      const A = stations[i - 1], B = stations[i], n = Math.max(1, Math.ceil((B.z - A.z) / opts.zStep));
+      for (let k = 1; k <= n; k++) {
+        const t = k / n, L = (u, v) => u + (v - u) * t;
+        S.push(k === n ? B : { z: L(A.z, B.z), a: L(A.a, B.a), b: L(A.b, B.b), x: L(A.x || 0, B.x || 0), y: L(A.y || 0, B.y || 0), e: L(A.e || 4, B.e || 4) });
+      }
+    }
+    stations = S;
+  }
+  const cut = opts && opts.cut;
   const p = [], n = [];
   // split at creases: each run is smooth along its length, and runs share the crease ring
   const runs = []; let cur = [stations[0]];
@@ -100,6 +124,10 @@ function loftRaw(stations, seg = 32, caps = [true, true]) {
     for (let i = 0; i < R.length - 1; i++) {
       for (let j = 0; j < seg; j++) {
         const j2 = (j + 1) % seg;
+        if (cut) {
+          const P0 = R[i][j], P1 = R[i + 1][j2];
+          if (cut((P0.x + P1.x) / 2, (P0.y + P1.y) / 2, (P0.z + P1.z) / 2)) continue;
+        }
         for (const [ri, ci] of [[i, j], [i, j2], [i + 1, j], [i, j2], [i + 1, j2], [i + 1, j]]) {
           const P = R[ri][ci], Nn = N[ri][ci]; p.push(P.x, P.y, P.z); n.push(Nn.x, Nn.y, Nn.z);
         }
@@ -122,7 +150,7 @@ function loftRaw(stations, seg = 32, caps = [true, true]) {
 // a hull: named loft stations plus helpers to find points on its surface
 class Hull {
   constructor(stations, seg = 40) { this.st = stations; this.seg = seg; }
-  raw(lod = 0, caps) { return loftRaw(this.st, lod ? Math.max(10, this.seg >> 2) : this.seg, caps); }
+  raw(lod = 0, caps, opts = null) { return loftRaw(this.st, lod ? Math.max(10, this.seg >> 2) : this.seg, caps, opts); }
   // section parameters at z (linear between stations)
   at(z) {
     const S = this.st;
@@ -151,6 +179,16 @@ class Hull {
     t.copy(b).cross(n).normalize();
     return { o, n, t, b };
   }
+  // how far a point is inside the hull (> 0 inside, metres along the section's smaller axis)
+  depth(p) {
+    const S = this.st;
+    if (p.z < S[0].z || p.z > S[S.length - 1].z) return -1;
+    const s = this.at(p.z), e = s.e || 4;
+    const k = Math.pow(Math.abs((p.x - (s.x || 0)) / s.a) ** e + Math.abs((p.y - (s.y || 0)) / s.b) ** e, 1 / e);
+    return (1 - k) * Math.min(s.a, s.b);
+  }
+  // a surface frame that remembers where it is on the hull (for parts that conform to it)
+  slot(z, ang) { const f = this.frame(z, ang); f.hull = this; f.z = z; f.ang = ang; return f; }
   // the angle whose surface normal points most nearly along a direction in the section plane
   angleFor(dx, dy) { return Math.atan2(dy, dx); }
 }
@@ -169,6 +207,30 @@ function frameAtN(o, n) {
   const up = Math.abs(N.z) > 0.95 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
   const b = N.clone().cross(up).normalize(), t = b.clone().cross(N).normalize();
   return { o: o.isVector3 ? o.clone() : new THREE.Vector3(...o), n: N, t, b };
+}
+
+// a plate that follows the hull's curvature: a patch of the surface between z ± halfLen and an arc
+// of ± halfArc metres round `ang`, lifted to [t0, t1] above the skin, with closed edges
+function conformRaw(hull, z, ang, halfLen, halfArc, t0, t1, nz = 8, na = 8) {
+  const sp = hull.point(z, ang + 0.01).distanceTo(hull.point(z, ang - 0.01)) / 0.02;
+  const da = halfArc / Math.max(0.2, sp);
+  const grid = (t) => { const G = []; for (let i = 0; i <= nz; i++) { const zz = z - halfLen + (2 * halfLen * i) / nz, row = []; for (let j = 0; j <= na; j++) { const f = hull.frame(zz, ang - da + (2 * da * j) / na); row.push(f.o.addScaledVector(f.n, t)); } G.push(row); } return G; };
+  const O = grid(t1), I = grid(t0), out = { p: [], n: [] };
+  const put = (r) => { out.p.push(...r.p); out.n.push(...r.n); };
+  for (let i = 0; i < nz; i++) { put(stripRaw(O[i], O[i + 1])); put(stripRaw(I[i + 1], I[i])); }
+  put(stripRaw(O[0], I[0])); put(stripRaw(I[nz], O[nz]));
+  put(stripRaw(O.map((r) => r[0]), I.map((r) => r[0]))); put(stripRaw(I.map((r) => r[na]), O.map((r) => r[na])));
+  return out;
+}
+// a strip of quads between two equal-length polylines (double-sided materials light either face)
+function stripRaw(A, B) {
+  const p = [], n = [];
+  for (let i = 0; i < A.length - 1; i++) {
+    const a0 = A[i], a1 = A[i + 1], b0 = B[i], b1 = B[i + 1];
+    const nn = a1.clone().sub(a0).cross(b0.clone().sub(a0)).normalize();
+    for (const P of [a0, a1, b0, a1, b1, b0]) { p.push(P.x, P.y, P.z); n.push(nn.x, nn.y, nn.z); }
+  }
+  return { p, n };
 }
 
 // ---------------------------------------------------------------------

@@ -15,6 +15,16 @@ typedef unsigned int u32;
 
 static inline float fsqrt(float x) { return __builtin_sqrtf(x > 0.f ? x : 0.f); }
 static inline float fabsf_(float x) { return x < 0.f ? -x : x; }
+// sine and cosine without libc: range-reduced odd polynomial (|error| < 2e-6), deterministic everywhere
+static inline float sinf_(float x) {
+  const float PI = 3.14159265f, TAU = 6.28318531f;
+  float t = (x + PI) / TAU; int k = (int)t; if (t < (float)k) k--;
+  x -= (float)k * TAU;
+  if (x > PI * 0.5f) x = PI - x; else if (x < -PI * 0.5f) x = -PI - x;
+  float x2 = x * x;
+  return x * (1.f - x2 / 6.f * (1.f - x2 / 20.f * (1.f - x2 / 42.f * (1.f - x2 / 72.f))));
+}
+static inline float cosf_(float x) { return sinf_(x + 1.57079633f); }
 static inline float fminf_(float a, float b) { return a < b ? a : b; }
 static inline float fmaxf_(float a, float b) { return a > b ? a : b; }
 static inline float clampf(float x, float a, float b) { return x < a ? a : (x > b ? b : x); }
@@ -114,7 +124,12 @@ enum { P_TYPE = 0, P_STATE = 1, P_WRECK = 2, P_LOCAL = 3, P_POS = 6, P_VEL = 9, 
        P_ANG = 16, P_MASS = 19, P_RAD = 20, P_CUT = 21, P_CUTTIME = 22, P_VALUE = 23,
        P_LQUAT = 24, P_HEAT = 28, P_N = 32 };
 enum { W_POS = 0, W_VEL = 3, W_QUAT = 6, W_ANG = 10, W_MASS = 13, W_NS = 14, W_SEED = 15,
-       W_SPH = 16, W_BR = 64, W_STYLE = 65, W_CLASS = 66, W_TORN = 67, W_N = 68 };
+       W_SPH = 16, W_BR = 64, W_STYLE = 65, W_CLASS = 66, W_TORN = 67,
+       W_NBR = 68, W_BRS = 69, W_N = 96 };
+// breach record (W_BRS + i·BR_N): section, angle round the section, centre z (wreck-local),
+// half-length along z, half-width across, floor distance from the section axis
+enum { BR_SEC = 0, BR_ANG = 1, BR_Z = 2, BR_HL = 3, BR_HW = 4, BR_FLOOR = 5, BR_N = 6 };
+#define MAX_BREACH 4
 #define MAX_SPH 12
 enum { R_POS = 0, R_VEL = 3, R_RAD = 6, R_MASS = 7, R_N = 8 };
 enum { D_POS = 0, D_VEL = 3, D_STATE = 6, D_HP = 7, D_CD = 8, D_LAST = 9, D_LOST = 12,
@@ -239,9 +254,10 @@ static float partMass(int t) {
 }
 static float partRadius(int t) {
   switch (t) {
-    case PT_ARMOR: return 3.2f; case PT_RADIATOR: return 3.6f; case PT_THRUSTER: return 2.8f;
-    case PT_PDC: return 2.2f; case PT_MASSDRIVER: return 5.5f; case PT_REACTOR: return 3.2f;
-    case PT_SENSOR: return 2.4f; case PT_JUMPCELL: return 1.2f; case PT_CAPACITOR: return 1.9f;
+    // bounding radius of each fitting as built (client/main.js partPrototype)
+    case PT_ARMOR: return 3.2f; case PT_RADIATOR: return 2.6f; case PT_THRUSTER: return 1.9f;
+    case PT_PDC: return 1.8f; case PT_MASSDRIVER: return 4.3f; case PT_REACTOR: return 3.0f;
+    case PT_SENSOR: return 2.0f; case PT_JUMPCELL: return 1.2f; case PT_CAPACITOR: return 1.7f;
     default: return 3.0f;
   }
 }
@@ -328,10 +344,46 @@ static float sectionDist(const Sec& S, V3 lp, V3* n) {
   if (dr > dz) { *n = nr; return dr; }
   *n = nz; return dz;
 }
+// Breaches: blast holes carved into a section — a box open to space, from the floor (inside the
+// hull) outward. Internal fittings (reactors, cells, capacitors) sit on breach floors.
+static float boxDist(V3 p, V3 h, V3* g) {
+  V3 q = v3(fabsf_(p.x) - h.x, fabsf_(p.y) - h.y, fabsf_(p.z) - h.z);
+  V3 o = v3(fmaxf_(q.x, 0.f), fmaxf_(q.y, 0.f), fmaxf_(q.z, 0.f));
+  float lo = len(o);
+  if (lo > 1e-6f) {
+    *g = v3(o.x * (p.x < 0 ? -1.f : 1.f) / lo, o.y * (p.y < 0 ? -1.f : 1.f) / lo, o.z * (p.z < 0 ? -1.f : 1.f) / lo);
+    return lo;
+  }
+  if (q.x >= q.y && q.x >= q.z) { *g = v3(p.x < 0 ? -1.f : 1.f, 0, 0); return q.x; }
+  if (q.y >= q.z) { *g = v3(0, p.y < 0 ? -1.f : 1.f, 0); return q.y; }
+  *g = v3(0, 0, p.z < 0 ? -1.f : 1.f); return q.z;
+}
+static float breachDist(const float* W, int i, const Sec& S, V3 lp, V3* n) {
+  const float* B = &W[W_BRS + i * BR_N];
+  float ca = cosf_(B[BR_ANG]), sa = sinf_(B[BR_ANG]);
+  V3 q = sub(lp, S.c);
+  float u = q.x * ca + q.y * sa, v = -q.x * sa + q.y * ca, w = lp.z - B[BR_Z];
+  float U = 2.f * fmaxf_(S.a, S.b);
+  V3 g; float d = boxDist(v3(u - (B[BR_FLOOR] + U * 0.5f), v, w), v3(U * 0.5f, B[BR_HW], B[BR_HL]), &g);
+  *n = v3(g.x * ca - g.y * sa, g.x * sa + g.y * ca, g.z);
+  return d;
+}
+// a section with its breaches cut out (CSG difference: max(section, −box))
+static float carvedDist(const float* W, int s, V3 lp, V3* n) {
+  Sec S = wreckSection(W, s);
+  float d = sectionDist(S, lp, n);
+  int nb = (int)W[W_NBR];
+  for (int i = 0; i < nb; i++) {
+    if ((int)W[W_BRS + i * BR_N + BR_SEC] != s) continue;
+    V3 bn; float db = breachDist(W, i, S, lp, &bn);
+    if (-db > d) { d = -db; *n = mul(bn, -1.f); }
+  }
+  return d;
+}
 // distance in wreck-local space to the union of all sections
 static float localHullDist(const float* W, V3 lp) {
   float best = 1e9f; int ns = (int)W[W_NS];
-  for (int s = 0; s < ns; s++) { Sec S = wreckSection(W, s); V3 n; float d = sectionDist(S, lp, &n); if (d < best) best = d; }
+  for (int s = 0; s < ns; s++) { V3 n; float d = carvedDist(W, s, lp, &n); if (d < best) best = d; }
   return best;
 }
 // world-space distance to a wreck's hull (all sections); n is the world-space outward normal
@@ -342,8 +394,7 @@ static float wreckDist(int w, V3 p, V3* n, int* sec) {
   float best = 1e9f; V3 bn = v3(0, 1, 0); int bs = 0;
   int ns = (int)W[W_NS];
   for (int s = 0; s < ns; s++) {
-    Sec S = wreckSection(W, s);
-    V3 nn; float d = sectionDist(S, lp, &nn);
+    V3 nn; float d = carvedDist(W, s, lp, &nn);
     if (d < best) { best = d; bn = nn; bs = s; }
   }
   *n = qrot(q, bn); if (sec) *sec = bs;
@@ -381,6 +432,16 @@ static Q quatFromTo(V3 a, V3 b) {  // rotation taking a → b (unit vectors)
   if (d < -0.9999f) { Q q = {1, 0, 0, 0}; return q; }
   V3 c = cross(a, b);
   Q q = {c.x, c.y, c.z, 1.f + d};
+  return qnorm(q);
+}
+
+// rotation whose columns are the given orthonormal axes (x, y, z)
+static Q quatFromBasis(V3 x, V3 y, V3 z) {
+  float tr = x.x + y.y + z.z; Q q;
+  if (tr > 0.f) { float s = fsqrt(tr + 1.f) * 2.f; q = {(y.z - z.y) / s, (z.x - x.z) / s, (x.y - y.x) / s, 0.25f * s}; }
+  else if (x.x > y.y && x.x > z.z) { float s = fsqrt(1.f + x.x - y.y - z.z) * 2.f; q = {0.25f * s, (y.x + x.y) / s, (z.x + x.z) / s, (y.z - z.y) / s}; }
+  else if (y.y > z.z) { float s = fsqrt(1.f + y.y - x.x - z.z) * 2.f; q = {(y.x + x.y) / s, 0.25f * s, (z.y + y.z) / s, (z.x - x.z) / s}; }
+  else { float s = fsqrt(1.f + z.z - x.x - y.y) * 2.f; q = {(z.x + x.z) / s, (z.y + y.z) / s, 0.25f * s, (x.y - y.x) / s}; }
   return qnorm(q);
 }
 
@@ -439,37 +500,109 @@ static void genWreckEx(int w, V3 pos, Q q, float scale, int style, int weaponBia
   }
   W[W_BR] = br + 4.f;
   W[W_MASS] = massSum;
+  // blast breaches: at least one, more on a capital hull; never on a torn end
+  int nb = cls == 1 ? 3 + (rnd() < 0.5f ? 1 : 0) : 1 + (int)(rnd() * 2.2f);
+  if (nb > MAX_BREACH) nb = MAX_BREACH;
+  int made = 0;
+  for (int tries = 0; tries < 40 && made < nb; tries++) {
+    // the engineering section (stern) is breached first, so its reactor can be reached
+    int s = made == 0 ? ns - 1 : (int)(rnd() * ns); if (s >= ns) s = ns - 1;
+    if ((s == 0 && (torn & 1)) || (s == ns - 1 && (torn & 2))) { if (made == 0 && ns > 1) s = ns - 2; else continue; }
+    Sec S = wreckSection(W, s);
+    float m = fminf_(S.a, S.b);
+    float ang = rnd() * 6.2831853f;
+    float hl = S.h * rrange(0.3f, 0.48f), hw = m * rrange(0.32f, 0.48f), fl = m * rrange(0.12f, 0.3f);
+    float zc = S.c.z + rrange(-1.f, 1.f) * (S.h * 0.85f - hl);
+    // the floor must lie inside the hull across its whole width
+    float ca = cosf_(ang), sa = sinf_(ang);
+    bool fits = true;
+    for (int e = -1; e <= 1; e += 2) {
+      float x = fl * ca - e * hw * sa, y = fl * sa + e * hw * ca;
+      if (norm4(x / S.a, y / S.b) > 0.86f) fits = false;
+    }
+    // keep breaches apart
+    for (int j = 0; j < made && fits; j++) {
+      const float* B = &W[W_BRS + j * BR_N];
+      if ((int)B[BR_SEC] != s) continue;
+      float da = fabsf_(B[BR_ANG] - ang); if (da > 3.14159265f) da = 6.2831853f - da;
+      // breaches sharing a stretch of hull must be on opposite sides, or their boxes would meet
+      if (da < 2.6f && fabsf_(B[BR_Z] - zc) < B[BR_HL] + hl + 1.f) fits = false;
+    }
+    if (!fits) continue;
+    float* B = &W[W_BRS + made * BR_N];
+    B[BR_SEC] = (float)s; B[BR_ANG] = ang; B[BR_Z] = zc; B[BR_HL] = hl; B[BR_HW] = hw; B[BR_FLOOR] = fl;
+    W[W_NBR] = (float)(made + 1);
+    // the opening must be open to space: no neighbouring section may fill it
+    for (int gx = -1; gx <= 1 && fits; gx++) for (int gz = -1; gz <= 1 && fits; gz++) {
+      float v = gx * hw * 0.8f, zz = zc + gz * hl * 0.8f;
+      V3 p = v3(S.c.x + (fl + 0.8f) * ca - v * sa, S.c.y + (fl + 0.8f) * sa + v * ca, zz);
+      if (localHullDist(W, p) < 0.4f) fits = false;
+    }
+    if (!fits) { W[W_NBR] = (float)made; continue; }
+    made++;
+  }
+  // Fittings go where a ship carries them: point defense on the shoulders, sensors on the
+  // spine, radiators and armour on the flanks, the mass driver along the keel, thrusters on
+  // the stern face; reactors, jump cells and capacitors inside the hull, reachable only
+  // where a breach has opened it. A fitting with no place left was destroyed with the ship.
   for (int k = 0; k < np; k++) {
-    int s = (int)(rnd() * ns); if (s >= ns) s = ns - 1;
     int type = pickPartType(cls);
     if (k == 0 && weaponBias == 1) type = PT_PDC;
     if (k == 0 && weaponBias == 2) type = PT_MASSDRIVER;
     if (k == 1) type = PT_JUMPCELL;
-    // bolted flush to the hull surface, facing out along its normal — on a spot no
-    // neighbouring section covers (sections overlap where they join)
-    V3 n = v3(0, 1, 0), local = v3(0, 0, 0); bool ok = false;
-    for (int tries = 0; tries < 12 && !ok; tries++) {
-      int s2 = tries == 0 ? s : (int)(rnd() * ns); if (s2 >= ns) s2 = ns - 1;
-      Sec S = wreckSection(W, s2);
-      V3 rd = rdir(); if (fabsf_(rd.x) + fabsf_(rd.y) < 0.05f) rd = v3(0, 1, 0);
-      local = sectionSurface(S, rd.x, rd.y, &n);
-      local.z = S.c.z + rrange(-0.7f, 0.7f) * (S.h - partRadius(type) * 0.6f);
-      ok = localHullDist(W, local) > -0.02f;
-      // and clear of the fittings already bolted to this hull
+    float pr = partRadius(type);
+    bool internal = type == PT_REACTOR || type == PT_JUMPCELL || type == PT_CAPACITOR;
+    V3 n = v3(0, 1, 0), t = v3(0, 0, 1), local = v3(0, 0, 0); bool ok = false;
+    for (int tries = 0; tries < 16 && !ok; tries++) {
+      if (internal) {
+        if (made == 0) break;
+        int bi = type == PT_REACTOR && tries < 4 ? 0 : (int)(rnd() * made); if (bi >= made) bi = made - 1;
+        const float* B = &W[W_BRS + bi * BR_N];
+        if (B[BR_HW] < pr * 0.75f || B[BR_HL] < pr * 0.75f) continue;
+        Sec S = wreckSection(W, (int)B[BR_SEC]);
+        float ca = cosf_(B[BR_ANG]), sa = sinf_(B[BR_ANG]);
+        float v = rrange(-1.f, 1.f) * (B[BR_HW] - pr * 0.7f), zz = B[BR_Z] + rrange(-1.f, 1.f) * (B[BR_HL] - pr * 0.7f);
+        n = v3(ca, sa, 0.f);
+        local = v3(S.c.x + B[BR_FLOOR] * ca - v * sa, S.c.y + B[BR_FLOOR] * sa + v * ca, zz);
+      } else if (type == PT_THRUSTER && !(torn & 2) && rnd() < 0.8f) {
+        // aft face of the engineering section, round the main drive
+        Sec S = wreckSection(W, ns - 1);
+        float ang = rnd() * 6.2831853f, rr = rrange(0.42f, 0.62f);
+        local = v3(S.c.x + cosf_(ang) * S.a * rr, S.c.y + sinf_(ang) * S.b * rr, S.c.z + S.h);
+        n = v3(0, 0, 1); t = v3(0, 1, 0);
+      } else {
+        float ang;
+        int s = (int)(rnd() * ns); if (s >= ns) s = ns - 1;
+        switch (type) {
+          case PT_PDC: ang = (rnd() < 0.5f ? 0.785f : 2.356f) * (rnd() < 0.7f ? 1.f : -1.f) + rrange(-0.25f, 0.25f); break;
+          case PT_SENSOR: ang = 1.5708f + rrange(-0.35f, 0.35f); if (rnd() < 0.7f) s = ns > 1 ? (int)(rnd() * 2.f) : 0; break;
+          case PT_MASSDRIVER: ang = -1.5708f + rrange(-0.15f, 0.15f); break;
+          case PT_RADIATOR: ang = (rnd() < 0.5f ? 0.f : 3.14159f) + rrange(-0.2f, 0.2f); break;
+          default: ang = rnd() * 6.2831853f;
+        }
+        Sec S = wreckSection(W, s);
+        local = sectionSurface(S, cosf_(ang), sinf_(ang), &n);
+        local.z = S.c.z + rrange(-0.7f, 0.7f) * (S.h - pr * 0.6f);
+      }
+      // on the surface (or breach floor), not over a hole or inside a neighbouring section
+      ok = fabsf_(localHullDist(W, local)) < 0.05f;
       for (int j = 0; j < nParts && ok; j++) {
         const float* Q2 = &parts[j * P_N];
         if ((int)Q2[P_WRECK] != w) continue;
-        if (len(sub(gv(Q2, P_LOCAL), local)) < (Q2[P_RAD] + partRadius(type)) * 0.8f) ok = false;
+        if (len(sub(gv(Q2, P_LOCAL), local)) < (Q2[P_RAD] + pr) * 0.8f) ok = false;
       }
     }
     if (!ok) continue;
-    addPart(type, w, local, quatFromTo(v3(0, 1, 0), n));
+    // up out of the surface, forward along the hull
+    V3 tt = sub(t, mul(n, dot(t, n))); if (len(tt) < 1e-3f) tt = v3(1, 0, 0);
+    addPart(type, w, local, quatFromBasis(cross(n, norm(tt)), n, norm(tt)));
   }
 }
 
 static void genWreck(int w, V3 pos, float scale, int style, int weaponBias) {
   int ns = 3 + (int)(rnd() * 2.99f); if (ns > 5) ns = 5;
-  genWreckEx(w, pos, rquat(), scale, style, weaponBias, ns, 6 + (int)(rnd() * 5.f), 0, 0, 0.35f);
+  int torn = rnd() < 0.55f ? 1 : 0;   // bow shot away
+  genWreckEx(w, pos, rquat(), scale, style, weaponBias, ns, 6 + (int)(rnd() * 5.f), 0, torn, 0.35f);
 }
 
 static void placeParts() {
