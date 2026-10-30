@@ -3,7 +3,7 @@ import {
   uniform, vec2, vec3, vec4, float, mix, smoothstep, abs, normalView, uv, pass, time, sin, renderOutput,
   mrt, output, directionToColor, colorToDirection, sample, screenUV,
   Fn, positionLocal, normalLocal, positionView, faceDirection, floor, fract, min, select, step, clamp, hash,
-  mx_fractal_noise_float, mx_noise_float, fwidth, mod, max,
+  mx_fractal_noise_float, mx_noise_float, fwidth, mod, max, atan, normalWorld, positionWorld, length, dot, sqrt, exp, cos,
 } from 'three/tsl';
 import { ao } from 'three/addons/tsl/display/GTAONode.js';
 import { lensflare } from 'three/addons/tsl/display/LensflareNode.js';
@@ -402,9 +402,15 @@ function buildSky(sunDir, planetDir) {
       const dens = Math.exp(-dy * dy);
       if (dens < 0.02) continue;
       const n = noise(x / 340, y / 340, 5), dust = noise(x / 120 + 7, y / 120, 4);
-      const lum = dens * Math.max(0, n - 0.32) * 55 * (1 - Math.max(0, dust - 0.52) * 2.5);
+      // the galactic core glows warm; the arms are bluer; dust lanes cut dark rifts through both
+      const cx = (x - Wd * 0.3) / (Wd * 0.11), warm = Math.exp(-cx * cx) * Math.exp(-dy * dy * 0.6);
+      const rift = 1 - Math.min(1, Math.max(0, dust - 0.5) * 2.8);
+      const lum = dens * Math.max(0, n - 0.3) * (62 + warm * 70) * rift;
       const k = (y * Wd + x) * 4;
-      d[k] += lum * 0.78; d[k + 1] += lum * 0.78; d[k + 2] += lum * 0.95;
+      d[k] += lum * (0.74 + warm * 0.36); d[k + 1] += lum * (0.74 + warm * 0.16); d[k + 2] += lum * (0.96 - warm * 0.32);
+      // faint emission nebulae strung along the band
+      const hn = noise(x / 210 + 31, y / 210 + 5, 4);
+      if (hn > 0.6) { const e = (hn - 0.6) * dens * 120 * rift; d[k] += e; d[k + 1] += e * 0.22; d[k + 2] += e * 0.34; }
     }
   }
   g.putImageData(img, 0, 0);
@@ -441,58 +447,83 @@ function buildSky(sunDir, planetDir) {
   return { sky: t, env: et };
 }
 
+// The gas giant, computed per pixel: warped cloud bands, a long-lived storm, polar haze, the rings
+// casting their shadow across the cloud tops and the planet's shadow falling across the rings.
+const RING_IN = 1.35, RING_OUT = 2.35;
+// ring opacity across its width (u = 0 inner edge … 1 outer edge)
+const ringDensity = Fn(([u]) => {
+  const n = mx_fractal_noise_float(vec3(u.mul(38), 0.5, 1.5), 4, 2.0, 0.55).mul(0.5).add(0.5);
+  const fine = sin(u.mul(420)).mul(0.5).add(0.5).mul(sin(u.mul(97).add(1.3)).mul(0.5).add(0.5));
+  const gapA = float(1).sub(smoothstep(0.405, 0.415, u).mul(float(1).sub(smoothstep(0.465, 0.475, u))).mul(0.93));
+  const gapB = float(1).sub(smoothstep(0.775, 0.78, u).mul(float(1).sub(smoothstep(0.8, 0.805, u))).mul(0.85));
+  const edges = smoothstep(0.0, 0.1, u).mul(float(1).sub(smoothstep(0.9, 1.0, u)));
+  const broad = mx_fractal_noise_float(vec3(u.mul(9), 3.5, 0.5), 3, 2.0, 0.5).mul(0.5).add(0.5);
+  return clamp(n.sub(0.2).mul(1.2).add(fine.mul(0.07)).mul(broad.mul(0.8).add(0.45)), 0, 1).mul(gapA).mul(gapB).mul(edges);
+});
 function buildPlanet() {
-  const Wd = 2048, Ht = 1024; const c = canvas(Wd, Ht), g = c.getContext('2d');
-  const noise = makeNoise(4242), rnd = mulberry(4243);
-  const img = g.createImageData(Wd, Ht), d = img.data;
-  const palette = [[196, 160, 118], [168, 120, 84], [222, 196, 156], [140, 98, 70], [205, 176, 132], [120, 86, 64], [230, 212, 180]];
-  for (let y = 0; y < Ht; y++) {
-    const lat = y / Ht;
-    for (let x = 0; x < Wd; x++) {
-      const warp = noise(x / 180, y / 60, 4) * 0.08 + noise(x / 40, y / 20, 3) * 0.015;
-      const bandF = (lat + warp) * 22;
-      const i0 = Math.floor(bandF) % palette.length, i1 = (i0 + 1) % palette.length;
-      const f = bandF - Math.floor(bandF); const s = f * f * (3 - 2 * f);
-      const k = (y * Wd + x) * 4;
-      const n = 0.88 + noise(x / 25, y / 25, 3) * 0.22;
-      d[k] = (palette[i0][0] * (1 - s) + palette[i1][0] * s) * n;
-      d[k + 1] = (palette[i0][1] * (1 - s) + palette[i1][1] * s) * n;
-      d[k + 2] = (palette[i0][2] * (1 - s) + palette[i1][2] * s) * n;
-      d[k + 3] = 255;
-    }
-  }
-  g.putImageData(img, 0, 0);
-  // storms
-  for (let i = 0; i < 9; i++) {
-    const x = rnd() * Wd, y = Ht * (0.25 + rnd() * 0.5), rx = 20 + rnd() * 70, ry = rx * 0.45;
-    const gr = g.createRadialGradient(x, y, 0, x, y, rx);
-    gr.addColorStop(0, i === 0 ? 'rgba(170,80,50,.85)' : 'rgba(240,225,200,.6)'); gr.addColorStop(1, 'rgba(240,225,200,0)');
-    g.save(); g.translate(x, y); g.scale(1, ry / rx); g.translate(-x, -y); g.fillStyle = gr; g.beginPath(); g.arc(x, y, rx, 0, Math.PI * 2); g.fill(); g.restore();
-  }
-  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace; tex.anisotropy = 8;
-  const planet = new THREE.Mesh(new THREE.SphereGeometry(1, 160, 96), new THREE.MeshStandardMaterial({ map: tex, roughness: 1, metalness: 0 }));
-  // atmosphere rim
+  const R = 7200; // world radius; the group is scaled by this
+  const uSun = uniform(new THREE.Vector3(0, 1, 0)), uC = uniform(new THREE.Vector3()), uN = uniform(new THREE.Vector3(0, 1, 0));
+  const tone = (h) => vec3(...new THREE.Color(h).toArray());
+  // --- clouds ---
+  const P = positionLocal.normalize();
+  const lat = P.y;
+  const lon = atan(P.z, P.x);
+  const warp = mx_fractal_noise_float(P.mul(vec3(2.4, 8.0, 2.4)), 4, 2.0, 0.55).mul(0.04)
+    .add(mx_fractal_noise_float(P.mul(vec3(9.0, 34.0, 9.0)), 3, 2.0, 0.5).mul(0.01));
+  const b = lat.add(warp).mul(10.5);
+  const t1 = sin(b).mul(0.5).add(0.5), t2 = sin(b.mul(2.3).add(1.7)).mul(0.5).add(0.5), t3 = sin(b.mul(5.1).add(0.4)).mul(0.5).add(0.5);
+  let col = mix(tone('#e3cfaa'), tone('#b88c62'), t1);
+  col = mix(col, tone('#8a5f42'), t2.mul(0.55));
+  col = mix(col, tone('#a2593a'), smoothstep(0.72, 1.0, t3).mul(0.35));
+  const streak = mx_noise_float(P.mul(vec3(30, 150, 30))).mul(0.5).add(0.5);
+  col = col.mul(streak.mul(0.12).add(0.92));
+  col = mix(col, tone('#efe2c6'), smoothstep(0.12, 0.0, abs(lat.add(warp.mul(0.5)))).mul(0.45));
+  col = col.mul(mix(float(1), float(0.62), smoothstep(0.62, 0.96, abs(lat))));
+  // the storm: an oval with a pale rim and a dark red heart
+  const d = vec2(lon.sub(1.2).mul(1.25), lat.add(0.31).mul(4.2)).length();
+  col = mix(col, tone('#f1e4ca'), smoothstep(1.05, 0.85, d).mul(smoothstep(0.55, 0.8, d)).mul(0.6));
+  col = mix(col, tone('#8e3a22'), smoothstep(0.75, 0.25, d).mul(0.85));
+  // ring shadow on the cloud tops: march from here toward the sun to the ring plane
+  const pw = positionWorld;
+  const tR = dot(uC.sub(pw), uN).div(dot(uSun, uN));
+  const q = pw.add(uSun.mul(tR));
+  const ru = length(q.sub(uC)).div(R).sub(RING_IN).div(RING_OUT - RING_IN);
+  const inRing = step(0.0, tR).mul(step(0.0, ru)).mul(step(ru, 1.0));
+  const ringShade = float(1).sub(ringDensity(clamp(ru, 0, 1)).mul(inRing).mul(0.8));
+  const mat = new THREE.MeshStandardNodeMaterial({ roughness: 1, metalness: 0 });
+  mat.colorNode = col.mul(ringShade);
+  const planet = new THREE.Mesh(new THREE.SphereGeometry(1, 160, 96), mat);
+  // --- atmosphere: haze on the limb, brightest on the day side ---
   const atmo = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide });
-  const fres = float(1).sub(abs(normalView.z)).pow(3.0);
-  atmo.colorNode = vec3(0.95, 0.62, 0.36).mul(fres.mul(1.6));
+  const fres = float(1).sub(abs(normalView.z)).pow(2.6);
+  const day = clamp(dot(normalWorld, uSun).add(0.3), 0, 1);
+  atmo.colorNode = mix(vec3(0.55, 0.35, 0.3), vec3(1.0, 0.72, 0.45), day).mul(fres.mul(1.5)).mul(day.mul(0.9).add(0.1));
   const atmoMesh = new THREE.Mesh(new THREE.SphereGeometry(1.025, 128, 64), atmo);
-  // rings
-  const rc = canvas(2048, 8), rg = rc.getContext('2d');
-  for (let x = 0; x < 2048; x++) {
-    const t = x / 2048; const n = noise(x / 9, 0.5, 4);
-    const gap = (t > 0.42 && t < 0.47) || (t > 0.78 && t < 0.8) ? 0.05 : 1;
-    const a = Math.max(0, (n - 0.25)) * 1.2 * gap * Math.min(1, t * 6) * Math.min(1, (1 - t) * 5);
-    rg.fillStyle = `rgba(${200 + n * 40},${170 + n * 40},${140 + n * 30},${Math.min(1, a)})`; rg.fillRect(x, 0, 1, 8);
-  }
-  const rtex = new THREE.CanvasTexture(rc); rtex.colorSpace = THREE.SRGBColorSpace;
-  const ringGeo = new THREE.RingGeometry(1.35, 2.35, 256, 1);
-  const pos = ringGeo.attributes.position, ruv = ringGeo.attributes.uv;
-  for (let i = 0; i < pos.count; i++) { const r = Math.hypot(pos.getX(i), pos.getY(i)); ruv.setXY(i, (r - 1.35) / 1.0, 0.5); }
-  const ring = new THREE.Mesh(ringGeo, new THREE.MeshStandardMaterial({ map: rtex, transparent: true, side: THREE.DoubleSide, roughness: 1, metalness: 0, depthWrite: false }));
+  // --- rings: lit by the sun on both faces, dark where the planet's shadow crosses them ---
+  const ringGeo = new THREE.RingGeometry(RING_IN, RING_OUT, 384, 1);
+  const rmat = new THREE.MeshBasicNodeMaterial({ transparent: true, side: THREE.DoubleSide, depthWrite: false });
+  const rr = length(positionLocal.xy);
+  const u = rr.sub(RING_IN).div(RING_OUT - RING_IN);
+  const dens = ringDensity(u);
+  const o = positionWorld.sub(uC);
+  const bb = dot(o, uSun), disc = bb.mul(bb).sub(dot(o, o).sub(R * R)).div(R * R);
+  const planetShadow = smoothstep(-0.015, 0.015, disc).mul(step(bb, 0.0));
+  const rlit = abs(dot(uN, uSun)).pow(0.5).mul(0.75).add(0.12).mul(float(1).sub(planetShadow.mul(0.94)));
+  const rcol = mix(tone('#8d7a64'), tone('#e2cfae'), mx_noise_float(vec3(u.mul(60), 2.0, 0)).mul(0.5).add(0.5));
+  rmat.colorNode = rcol.mul(rlit).mul(1.7);
+  rmat.opacityNode = dens.mul(0.92);
+  const ring = new THREE.Mesh(ringGeo, rmat);
   ring.rotation.x = -Math.PI / 2 + 0.32; ring.rotation.y = 0.18;
   const grp = new THREE.Group(); grp.add(planet, atmoMesh, ring);
   grp.rotation.z = 0.28;
-  return { grp, planet, ring, atmo: atmoMesh };
+  // world-space uniforms, refreshed whenever the group follows the camera
+  const update = (sun) => {
+    grp.updateMatrixWorld(true);
+    uSun.value.copy(sun).normalize();
+    uC.value.setFromMatrixPosition(grp.matrixWorld);
+    uN.value.set(0, 0, 1).transformDirection(ring.matrixWorld);
+  };
+  return { grp, planet, ring, atmo: atmoMesh, update };
 }
 
 function radialTex(stops, size = 256) {
@@ -1022,13 +1053,51 @@ function buildSparks() {
   const m = new THREE.InstancedMesh(geo, mat, N); m.frustumCulled = false;
   m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
   const list = [];
-  for (let i = 0; i < N; i++) { list.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 1, c: new THREE.Color() }); m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); }
+  for (let i = 0; i < N; i++) { list.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 1, c: new THREE.Color(), hot: false, T0: 2400 }); m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); }
   scene.add(m);
   return { m, list, next: 0, N };
 }
 function spawnSpark(sp, p, v, life, col) {
   const s = sp.list[sp.next]; sp.next = (sp.next + 1) % sp.N;
   s.p.copy(p); s.v.copy(v); s.life = life; s.max = life; s.c.copy(col);
+  // warm sparks are molten metal: they cool from white-yellow through orange to a dull red
+  s.hot = col.r > col.b * 1.5; s.T0 = 1700 + Math.min(1, col.r / 5) * 1100 + Math.random() * 300;
+}
+
+// Metal vapour: a brief, fast-expanding glow where a beam or a slug vaporises hull. Vacuum gives it
+// nothing to linger in, so it is gone in a fraction of a second.
+function buildPuffs() {
+  const N = 96;
+  const tex = radialTex([[0, 'rgba(255,255,255,1)'], [0.25, 'rgba(255,255,255,.45)'], [0.6, 'rgba(255,255,255,.08)'], [1, 'rgba(255,255,255,0)']], 128);
+  const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false });
+  const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), mat, N); m.frustumCulled = false;
+  m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * 3), 3);
+  const list = [];
+  for (let i = 0; i < N; i++) { list.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), life: 0, max: 1, r0: 1, r1: 3, c: new THREE.Color() }); m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); }
+  scene.add(m);
+  return { m, list, next: 0, N };
+}
+function spawnPuff(pf, p, v, r0, r1, life, col) {
+  const s = pf.list[pf.next]; pf.next = (pf.next + 1) % pf.N;
+  s.p.copy(p); s.v.copy(v); s.r0 = r0; s.r1 = r1; s.life = life; s.max = life; s.c.copy(col);
+}
+// Flakes of hull: torn off by cuts and hits, tumbling away for good
+function buildShards() {
+  const N = 240;
+  const g = merge([new THREE.BoxGeometry(0.5, 0.06, 0.32), place(new THREE.BoxGeometry(0.22, 0.05, 0.4), [0.2, 0.03, 0.1], [0, 0.6, 0])]);
+  const m = new THREE.InstancedMesh(g, MAT.dark, N); m.frustumCulled = false; m.castShadow = false; m.receiveShadow = true;
+  const list = [];
+  for (let i = 0; i < N; i++) { list.push({ p: new THREE.Vector3(), v: new THREE.Vector3(), q: new THREE.Quaternion(), w: new THREE.Vector3(), s: 1, life: 0 }); m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); }
+  m.userData.ir = IRM.cold;
+  scene.add(m);
+  return { m, list, next: 0, N };
+}
+function spawnShards(sh, p, n, speed, size = 1) {
+  for (let k = 0; k < n; k++) {
+    const s = sh.list[sh.next]; sh.next = (sh.next + 1) % sh.N;
+    s.p.copy(p); s.v.randomDirection().multiplyScalar(speed * (0.3 + Math.random()));
+    s.q.random(); s.w.randomDirection().multiplyScalar(2 + Math.random() * 6); s.s = size * (0.4 + Math.random() * 1.4); s.life = 8 + Math.random() * 6;
+  }
 }
 
 function buildTracers(cap, color = null) {
@@ -1254,7 +1323,7 @@ function project(p) {
 // =====================================================================
 const game = { running: false, over: false, acc: 0, last: 0, shake: 0, runSeed: 0, mode: 'boot' };
 let TRACERS_OURS;
-let SHIP, WRECKS = [], PARTS = [], DRONES = [], SCAVS = [], DEBRIS, DUST, SPARKS, TRACERS, FLASH, LASER, TETHER, HARPOON, PLANET, SUN;
+let SHIP, WRECKS = [], PARTS = [], DRONES = [], SCAVS = [], DEBRIS, DUST, SPARKS, PUFFS, SHARDS, TRACERS, FLASH, LASER, TETHER, HARPOON, PLANET, SUN;
 let sunDir, planetDir;
 
 function buildLaser() {
@@ -1359,6 +1428,7 @@ function handleEvents() {
         msg(`${info.name} cut free — harpoon it (RMB) and reel in (Space)`, info.weapon ? 'r' : 'a');
         game.stats.detached++; thud(0.5, 260);
         for (let k = 0; k < 40; k++) spawnSpark(SPARKS, p, new THREE.Vector3().randomDirection().multiplyScalar(6 + Math.random() * 14), 0.6 + Math.random(), new THREE.Color(4, 1.6, 0.5));
+        spawnPuff(PUFFS, p, tmpV2.set(0, 0, 0), 0.5, 7, 0.45, _c.setRGB(3.2, 2.2, 1.6)); spawnShards(SHARDS, p, 14, 5, 1.2);
         break;
       }
       case E.STOW: {
@@ -1372,7 +1442,7 @@ function handleEvents() {
         game.shake = Math.min(1.2, game.shake + a * 0.06); thud(Math.min(1, 0.3 + a * 0.05), 220);
         $('hitflash').style.opacity = Math.min(1, a * 0.08); game.stats.hits++;
         for (let k = 0; k < 18; k++) spawnSpark(SPARKS, p, new THREE.Vector3().randomDirection().multiplyScalar(4 + Math.random() * 10), 0.5 + Math.random() * 0.6, new THREE.Color(3, 1.4, 0.6));
-        flash(FLASH, p, 2500);
+        flash(FLASH, p, 2500); spawnShards(SHARDS, p, 6 + Math.min(20, a | 0), 4 + a * 0.3);
         break;
       }
       case E.DRONE_WAKE: game.stats.wakes++; msg('Drone awake — it will hunt your heat. Burn away hard to dodge, or go cold behind a hulk.', 'r'); beep(440, 0.25, 0.15, 'sawtooth'); break;
@@ -1384,6 +1454,7 @@ function handleEvents() {
       case E.DRONE_LOST: msg('Drone lost your track — it is searching your last position', 's'); break;
       case E.DRONE_DEAD: msg('Drone disabled — its turret is loose salvage', 's'); thud(0.9, 120); flash(FLASH, p, 6000);
         for (let k = 0; k < 80; k++) spawnSpark(SPARKS, p, new THREE.Vector3().randomDirection().multiplyScalar(5 + Math.random() * 25), 0.8 + Math.random() * 1.2, new THREE.Color(5, 2, 0.6));
+        spawnPuff(PUFFS, p, tmpV2.set(0, 0, 0), 1, 14, 0.7, _c.setRGB(4, 2.4, 1.2)); spawnShards(SHARDS, p, 30, 12, 1.4);
         addPartVisual(core.partCount() - 1);
         break;
       case E.SLUG_FIRED: flash(FLASH, p, 1500, new THREE.Color(1, 0.4, 0.2)); break;
@@ -1411,6 +1482,9 @@ function handleEvents() {
       case E.SPARK: {
         const eff = b;
         for (let k = 0; k < 3; k++) spawnSpark(SPARKS, p, new THREE.Vector3().randomDirection().multiplyScalar(3 + Math.random() * 9 * eff), 0.25 + Math.random() * 0.5, new THREE.Color(4 * eff + 1, 1.8, 0.6));
+        // ablation: a pale vapour bloom off the kerf, and now and then a fleck of slag
+        if (Math.random() < 0.6) spawnPuff(PUFFS, p, tmpV2.randomDirection().multiplyScalar(2), 0.25, 1.6 + eff * 1.6, 0.18 + Math.random() * 0.12, _c.setRGB(1.6 + eff, 1.5 + eff * 0.6, 1.7));
+        if (Math.random() < 0.08) spawnShards(SHARDS, p, 1, 3, 0.5);
         break;
       }
       case E.PD_FIRE: game.pdBeat = (game.pdBeat || 0) + 1; if (game.pdBeat % 6 === 0) beep(180 + Math.random() * 60, 0.03, 0.05, 'square'); break;
@@ -1584,9 +1658,33 @@ function syncVisuals(dt, t) {
     tmpQ.setFromUnitVectors(new THREE.Vector3(0, 0, 1), tmpV.copy(s.v).normalize());
     tmpM.compose(s.p, tmpQ, tmpV2.set(1, 1, Math.max(0.2, sp * 0.04)));
     SPARKS.m.setMatrixAt(i, tmpM);
-    SPARKS.m.setColorAt(i, _c.copy(s.c).multiplyScalar(k));
+    if (s.hot) { heatColor(700 + (s.T0 - 700) * k * k, _c).multiplyScalar(0.55 + k * 0.6); SPARKS.m.setColorAt(i, _c); }
+    else SPARKS.m.setColorAt(i, _c.copy(s.c).multiplyScalar(k));
   }
   SPARKS.m.instanceMatrix.needsUpdate = true; SPARKS.m.instanceColor.needsUpdate = true;
+  // vapour blooms: billboards that swell and fade
+  for (let i = 0; i < PUFFS.N; i++) {
+    const s = PUFFS.list[i];
+    if (s.life <= 0) { if (s.max > 0) { PUFFS.m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); s.max = 0; } continue; }
+    s.life -= dt; s.p.addScaledVector(s.v, dt);
+    const f = 1 - Math.max(0, s.life / s.max);
+    const r = s.r0 + (s.r1 - s.r0) * Math.sqrt(f);
+    tmpM.compose(s.p, camera.quaternion, tmpV2.set(r, r, r));
+    PUFFS.m.setMatrixAt(i, tmpM);
+    PUFFS.m.setColorAt(i, _c.copy(s.c).multiplyScalar((1 - f) * (1 - f)));
+  }
+  PUFFS.m.instanceMatrix.needsUpdate = true; PUFFS.m.instanceColor.needsUpdate = true;
+  // hull flakes: tumble away, shrink out when their time is up
+  for (let i = 0; i < SHARDS.N; i++) {
+    const s = SHARDS.list[i];
+    if (s.life <= 0) { if (s.s > 0) { SHARDS.m.setMatrixAt(i, tmpM.makeScale(0, 0, 0)); s.s = 0; } continue; }
+    s.life -= dt; s.p.addScaledVector(s.v, dt);
+    tmpQ.setFromAxisAngle(tmpV.copy(s.w).normalize(), s.w.length() * dt); s.q.premultiply(tmpQ);
+    const k = Math.min(1, s.life / 1.5) * s.s;
+    tmpM.compose(s.p, s.q, tmpV2.set(k, k, k));
+    SHARDS.m.setMatrixAt(i, tmpM);
+  }
+  SHARDS.m.instanceMatrix.needsUpdate = true;
 
   // impact flashes
   for (const f of FLASH.list) { f.t = Math.max(0, f.t - dt); f.l.intensity = f.peak * (f.t / 0.25) ** 2; }
@@ -1619,7 +1717,7 @@ function updateCamera(dt) {
   }
   camera.up.copy(camUp); camera.lookAt(camLook);
   // sky objects ride with the camera (effectively at infinity)
-  PLANET.grp.position.copy(camera.position).addScaledVector(planetDir, 26000);
+  PLANET.grp.position.copy(camera.position).addScaledVector(planetDir, 26000); PLANET.update(sunDir);
   SUN.position.copy(camera.position).addScaledVector(sunDir, 30000);
   // sun shadow frustum follows the ship
   sunLight.position.copy(pShip).addScaledVector(sunDir, 600);
@@ -2069,7 +2167,7 @@ function frame(now) {
     const a = t * 0.05;
     camera.position.set(Math.sin(a) * 90, 30, 300 + Math.cos(a) * 90);
     camera.up.set(0, 1, 0); camera.lookAt(0, 0, 420);
-    PLANET.grp.position.copy(camera.position).addScaledVector(planetDir, 26000);
+    PLANET.grp.position.copy(camera.position).addScaledVector(planetDir, 26000); PLANET.update(sunDir);
     SUN.position.copy(camera.position).addScaledVector(sunDir, 30000);
     sunLight.position.set(0, 0, 420).addScaledVector(sunDir, 600); sunLight.target.position.set(0, 0, 420);
   }
@@ -2122,6 +2220,8 @@ async function start() {
     DEBRIS = buildDebris();
     DUST = buildDust();
     SPARKS = buildSparks();
+    PUFFS = buildPuffs();
+    SHARDS = buildShards();
     TRACERS = buildTracers(core.slugCap());
     TRACERS_OURS = buildTracers(core.slugCap(), vec3(3.5, 3.2, 1.6));
     FLASH = buildFlashes();
@@ -2136,7 +2236,8 @@ async function start() {
     world.ready = true;
     world.direct = /direct/.test(location.search);
     window.__dbg = { renderer, scene, camera, pipeline, THREE, core, get ship() { return ship; }, get parts() { return parts; }, get wrecks() { return wrecks; }, setIR, tac, get picks() { return game.picks; }, issueOrder, setTactical, toggles,
-      get HUB() { return HUB; }, get scavs() { return scavs; }, get drones() { return drones; }, get SAVE() { return SAVE; }, syncBays: () => syncBays(), focusBay: () => focusBay(), renderHub: () => renderHub() };
+      get HUB() { return HUB; }, get scavs() { return scavs; }, get drones() { return drones; },
+      fx: (p, kind) => { const v = new THREE.Vector3(...p); if (kind === 'detach') { for (let k = 0; k < 40; k++) spawnSpark(SPARKS, v, new THREE.Vector3().randomDirection().multiplyScalar(6 + Math.random() * 14), 0.6 + Math.random(), new THREE.Color(4, 1.6, 0.5)); spawnPuff(PUFFS, v, new THREE.Vector3(), 0.5, 7, 0.45, new THREE.Color(3.2, 2.2, 1.6)); spawnShards(SHARDS, v, 14, 5, 1.2); } else { for (let k = 0; k < 3; k++) spawnSpark(SPARKS, v, new THREE.Vector3().randomDirection().multiplyScalar(3 + Math.random() * 9), 0.25 + Math.random() * 0.5, new THREE.Color(5, 1.8, 0.6)); spawnPuff(PUFFS, v, new THREE.Vector3().randomDirection().multiplyScalar(2), 0.25, 3.2, 0.25, new THREE.Color(2.6, 2.1, 1.7)); } }, get SAVE() { return SAVE; }, syncBays: () => syncBays(), focusBay: () => focusBay(), renderHub: () => renderHub() };
     window.addEventListener('error', (e) => console.error('UNCAUGHT', e.error && e.error.stack));
     window.addEventListener('unhandledrejection', (e) => console.error('REJECT', e.reason && e.reason.stack));
     bootStatus('Pressurising the hangar…');
