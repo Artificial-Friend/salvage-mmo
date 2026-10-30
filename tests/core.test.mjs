@@ -16,7 +16,7 @@ const S = { POS: 0, VEL: 3, QUAT: 6, PROP: 14, CARGO: 15, HULL: 16, BUS_T: 17, J
   TETH_TYPE: 38, CARGO_N: 54, STATE: 52, AP_STATE: 72, AP_GOAL: 73, AP_VREL: 74, SCRAP: 78, PDC_N: 80, COIL_CD: 82,
   HULL_MAX: 85, ARMOR: 86, N: 96 };
 const P = { TYPE: 0, STATE: 1, WRECK: 2, POS: 6, VEL: 9, QUAT: 12, CUT: 21, MASS: 19, N: 32 };
-const W = { POS: 0, VEL: 3, N: 68 };
+const W = { POS: 0, VEL: 3, N: 96 };
 const D = { POS: 0, STATE: 6, WAKE: 22, AMMO: 29, N: 32 };
 const R = { POS: 0, VEL: 3, RAD: 6, MASS: 7, N: 8 };
 const IN = { THRUST: 0, LASER: 6, HARPOON: 7, REEL: 8, KILLV: 9, JUMP: 12, AP_MODE: 16, AP_TYPE: 17, AP_IDX: 18, AP_QUIET: 19, AP_SERIAL: 20, FIRE: 21 };
@@ -136,7 +136,7 @@ test('a main-drive burn near a dormant drone makes it stir, then wake', () => {
   const v = views();
   const dp = vec(v.drones, 0);
   v.s[0] = dp[0]; v.s[1] = dp[1] + 260; v.s[2] = dp[2]; v.s[3] = v.s[4] = v.s[5] = 0;
-  const evs = run(6, () => { views().inp[IN.THRUST] = 1; });
+  const evs = run(10, () => { views().inp[IN.THRUST] = 1; });
   const stir = evs.indexOf(EV.STIR), wake = evs.indexOf(EV.WAKE);
   assert.ok(stir >= 0 && wake > stir, 'warning comes before the wake');
 });
@@ -215,15 +215,32 @@ test('performance: a large zone steps in well under a millisecond', () => {
 
 // Hull sections — mirror of core/core.cpp SEC_A/SEC_B/SEC_L (and client/shipkit.js HULL_SECTION)
 const SEC_A = [0.92, 0.74, 0.84], SEC_B = [0.62, 0.86, 0.78], SEC_L = [0.85, 0.65];
-const W_SPH = 16, W_NS = 14, W_STYLE = 65, W_CLASS = 66, W_QUAT = 6;
+const W_SPH = 16, W_NS = 14, W_STYLE = 65, W_CLASS = 66, W_QUAT = 6, W_NBR = 68, W_BRS = 69, BR_N = 6;
 const qinv = (q, v) => { // rotate v by the inverse of quaternion q
   const [x, y, z, w] = [-q[0], -q[1], -q[2], q[3]];
   const ix = w * v[0] + y * v[2] - z * v[1], iy = w * v[1] + z * v[0] - x * v[2], iz = w * v[2] + x * v[1] - y * v[0], iw = -x * v[0] - y * v[1] - z * v[2];
   return [ix * w + iw * -x + iy * -z - iz * -y, iy * w + iw * -y + iz * -x - ix * -z, iz * w + iw * -z + ix * -y - iy * -x];
 };
+function boxDist(p, h) {
+  const q = p.map((v, i) => Math.abs(v) - h[i]);
+  return Math.hypot(...q.map((v) => Math.max(v, 0))) + Math.min(Math.max(...q), 0);
+}
+// a section's breaches as [u, v, w] box tests (mirrors breachDist in the core)
+function breachesOf(wr, w, s) {
+  const o = w * W.N, out = [];
+  for (let i = 0; i < wr[o + W_NBR]; i++) {
+    const B = wr.slice(o + W_BRS + i * BR_N, o + W_BRS + (i + 1) * BR_N);
+    if ((B[0] | 0) === s) out.push({ ang: B[1], z: B[2], hl: B[3], hw: B[4], fl: B[5] });
+  }
+  return out;
+}
+function localOf(wr, w, p) {
+  const o = w * W.N;
+  return qinv([wr[o + W_QUAT], wr[o + W_QUAT + 1], wr[o + W_QUAT + 2], wr[o + W_QUAT + 3]], [p[0] - wr[o], p[1] - wr[o + 1], p[2] - wr[o + 2]]);
+}
 function hullDist(wr, w, p) {
   const o = w * W.N, st = wr[o + W_STYLE] | 0, cl = wr[o + W_CLASS] > 0.5 ? 1 : 0;
-  const lp = qinv([wr[o + W_QUAT], wr[o + W_QUAT + 1], wr[o + W_QUAT + 2], wr[o + W_QUAT + 3]], [p[0] - wr[o], p[1] - wr[o + 1], p[2] - wr[o + 2]]);
+  const lp = localOf(wr, w, p);
   let best = 1e9;
   for (let s = 0; s < wr[o + W_NS]; s++) {
     const c = [wr[o + W_SPH + s * 4], wr[o + W_SPH + s * 4 + 1], wr[o + W_SPH + s * 4 + 2]], r = wr[o + W_SPH + s * 4 + 3];
@@ -231,7 +248,12 @@ function hullDist(wr, w, p) {
     const q = [lp[0] - c[0], lp[1] - c[1], lp[2] - c[2]];
     const rho = Math.hypot(q[0], q[1]), k = Math.pow((q[0] / a) ** 4 + (q[1] / b) ** 4, 0.25);
     const dr = rho < 1e-4 ? -Math.min(a, b) : rho * (1 - 1 / k), dz = Math.abs(q[2]) - h;
-    best = Math.min(best, dr > 0 && dz > 0 ? Math.hypot(dr, dz) : Math.max(dr, dz));
+    let d = dr > 0 && dz > 0 ? Math.hypot(dr, dz) : Math.max(dr, dz);
+    for (const B of breachesOf(wr, w, s)) {
+      const u = q[0] * Math.cos(B.ang) + q[1] * Math.sin(B.ang), v = -q[0] * Math.sin(B.ang) + q[1] * Math.cos(B.ang), U = 2 * Math.max(a, b);
+      d = Math.max(d, -boxDist([u - (B.fl + U / 2), v, lp[2] - B.z], [U / 2, B.hw, B.hl]));
+    }
+    best = Math.min(best, d);
   }
   return best;
 }
@@ -286,4 +308,52 @@ test('the ship meets a hulk where its hull is, not at an invisible sphere', () =
   run(12, () => { closest = Math.min(closest, hullDist(views().wrecks, 0, vec(views().s, 0))); });
   // contact happens at the ship's collision radius (6 m · 0.8) from the drawn hull
   assert.ok(closest > 6 * 0.8 - 0.6 && closest < 6 * 0.8 + 0.6, `closest approach ${closest.toFixed(2)} m from the hull`);
+});
+
+test('every hulk is breached, and the breaches are open space', () => {
+  for (const zone of [0, 1]) {
+    e.initZone(13, zone);
+    const v = views();
+    for (let w = 0; w < e.wreckCount(); w++) {
+      const o = w * W.N;
+      assert.ok(v.wrecks[o + W_NBR] >= 1, `wreck ${w} has a breach`);
+      // the middle of the first breach, halfway up from its floor, is outside the hull
+      const s = v.wrecks[o + W_BRS] | 0, B = breachesOf(v.wrecks, w, s)[0];
+      const c = [v.wrecks[o + W_SPH + s * 4], v.wrecks[o + W_SPH + s * 4 + 1], v.wrecks[o + W_SPH + s * 4 + 2]];
+      const lp = [c[0] + Math.cos(B.ang) * (B.fl + 0.6), c[1] + Math.sin(B.ang) * (B.fl + 0.6), B.z];
+      const q = [v.wrecks[o + W_QUAT], v.wrecks[o + W_QUAT + 1], v.wrecks[o + W_QUAT + 2], v.wrecks[o + W_QUAT + 3]];
+      const wp = qinv([-q[0], -q[1], -q[2], q[3]], lp).map((x, i) => x + v.wrecks[o + i]);
+      assert.ok(hullDist(v.wrecks, w, wp) > 0.3, `breach ${w} is carved`);
+    }
+  }
+});
+
+test('reactors, jump cells and capacitors are inside the hull, on breach floors', () => {
+  let n = 0;
+  for (const zone of [0, 1]) {
+    e.initZone(17, zone);
+    const v = views();
+    for (let i = 0; i < e.partCount(); i++) {
+      const o = i * P.N, t = v.parts[o], w = v.parts[o + P.WRECK] | 0;
+      if (v.parts[o + P.STATE] !== 0 || w < 0 || ![5, 7, 8].includes(t)) continue;
+      // on a floor: a metre further out along its normal is open space, half a metre back is hull
+      const p = vec(v.parts, o + P.POS), up = partUp(v.parts, o);
+      assert.ok(hullDist(v.wrecks, w, p.map((x, k) => x + up[k])) > 0.5, `internal part ${i} has space above it`);
+      assert.ok(hullDist(v.wrecks, w, p.map((x, k) => x - up[k] * 0.5)) < -0.2, `internal part ${i} rests on structure`);
+      n++;
+    }
+  }
+  assert.ok(n > 10, `found ${n} internal fittings`);
+});
+
+test('no two fittings on a hulk overlap', () => {
+  e.initZone(19, 1);
+  const v = views();
+  const R = { 0: 3.2, 1: 2.6, 2: 1.9, 3: 1.8, 4: 4.3, 5: 3.0, 6: 2.0, 7: 1.2, 8: 1.7, 9: 3.0 };
+  for (let i = 0; i < e.partCount(); i++) for (let j = i + 1; j < e.partCount(); j++) {
+    const a = i * P.N, b = j * P.N;
+    if (v.parts[a + P.WRECK] !== v.parts[b + P.WRECK] || v.parts[a + P.STATE] !== 0 || v.parts[b + P.STATE] !== 0) continue;
+    const d = dist(vec(v.parts, a + P.POS), vec(v.parts, b + P.POS));
+    assert.ok(d >= (R[v.parts[a]] + R[v.parts[b]]) * 0.8 - 0.01, `parts ${i} and ${j} overlap (${d.toFixed(2)} m)`);
+  }
 });

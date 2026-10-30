@@ -151,7 +151,9 @@ function writeConfig(c) {
 //  glass, glow (lit windows), red / green / white (lights).
 // ---------------------------------------------------------------------
 const Q90X = [Math.PI / 2, 0, 0];
-const fr = (o, n) => frameAtN(new THREE.Vector3(...o), new THREE.Vector3(...n));
+const fr = (o, n, spin = 0) => { const f = frameAtN(new THREE.Vector3(...o), new THREE.Vector3(...n)); f.spin = spin; return f; };
+// a mount's placement matrix, including any spin of the part about the mount normal
+const slotM = (frm, lift = 0) => frameM(frm, lift, frm.spin || 0);
 // radiator wing: a thin panel with coolant ribs, hinged at the root (x = 0), extending along ±X
 function radiatorGeo(side, span, chord, t = 0.08) {
   const B = new Batch(0);
@@ -176,17 +178,16 @@ const DESIGNS = {
     for (const z of [3.4, 7.2]) B.add('accent', loftRaw([{ z, a: 1.98, b: 1.53, e: 5.5, y: z > 7 ? -0.05 : 0 }, { z: z + 0.35, a: 1.98, b: 1.53, e: 5.5, y: z > 7 ? -0.06 : 0 }], L ? 12 : 48));
     // reactor cooling fins and the spine's ventral keel plate
     for (let k = 0; k < (L ? 6 : 12); k++) { const a = (k / (L ? 6 : 12)) * Math.PI * 2 + 0.26; B.add('metal', rbox(0.08, 0.5, 2.2, 0.03, L), T([Math.cos(a) * 1.82, Math.sin(a) * 1.82, -7.4], [0, 0, a - Math.PI / 2])); }
-    B.add('dark', rbox(2.6, 0.36, 5.2, 0.1, L), T([0, -1.02, -3.2]));
     // equipment sponsons either side of the spine, propellant tanks nested beneath them
     const spons = [1, -1].map((sx) => new Hull([{ z: -5.0, a: 0.45, b: 0.6, x: 1.75 * sx, y: 0.1, e: 5 }, { z: -4.4, a: 0.72, b: 0.95, x: 1.75 * sx, y: 0.1, e: 5.5 },
       { z: 1.0, a: 0.72, b: 0.95, x: 1.75 * sx, y: 0.1, e: 5.5 }, { z: 1.9, a: 0.5, b: 0.7, x: 1.75 * sx, y: 0.1, e: 5 }], 28));
     for (const [i, sx] of [[0, 1], [1, -1]]) {
       B.add('paint', spons[i].raw(L));
       B.add('accent', loftRaw([{ z: -2.0, a: 0.74, b: 0.97, x: 1.75 * sx, y: 0.1, e: 5.5 }, { z: -1.6, a: 0.74, b: 0.97, x: 1.75 * sx, y: 0.1, e: 5.5 }], L ? 8 : 28));
-      DETAIL.tank(B, [1.15 * sx, -1.35, -1.8], 0.42, 4.4, 'metal');
+      DETAIL.tank(B, [0.62 * sx, -1.32, -1.8], 0.42, 4.4, 'metal');
       DETAIL.vent(B, spons[i].frame(-3.2, sx > 0 ? 0 : Math.PI), 0.9, 1.1);
       DETAIL.hatch(B, spons[i].frame(-0.2, sx > 0 ? 0 : Math.PI), 0.9, 1.1);
-      if (!L) B.add('metal', pipeRaw([[1.15 * sx, -0.95, 0.6], [0.95 * sx, -0.75, 1.6], [0.7 * sx, -0.6, 2.4]], 0.07, 6));
+      if (!L) B.add('metal', pipeRaw([[0.62 * sx, -1.1, 0.6], [0.6 * sx, -0.9, 1.6], [0.5 * sx, -0.7, 2.4]], 0.07, 6));
     }
     // manipulator arms: shoulder, upper arm, elbow, forearm, three-finger claw
     for (const sx of [1, -1]) {
@@ -219,18 +220,19 @@ const DESIGNS = {
     DETAIL.bell(B, [0, 0, -9.7], 1.5, 3.2);
     DETAIL.rungs(B, crew.frame(3.0, Math.PI + 0.35), 4);
     // dorsal pylon carrying the auxiliary engine pad, facing aft
-    B.add('dark', loftRaw([{ z: -9.0, a: 0.5, b: 0.32, y: 1.78, e: 5 }, { z: -6.6, a: 0.5, b: 0.32, y: 1.72, e: 5 }, { z: -5.8, a: 0.28, b: 0.16, y: 1.62, e: 4 }], L ? 8 : 20));
+    const pylonC = new Hull([{ z: -9.0, a: 0.5, b: 0.42, y: 2.4, e: 5 }, { z: -6.6, a: 0.5, b: 0.42, y: 2.2, e: 5 }, { z: -5.6, a: 0.3, b: 0.3, y: 1.75, e: 4 }], 20);
+    B.add('dark', pylonC.raw(L));
     return {
       slots: {
-        eng: fr([0, 1.78, -9.05], [0, 0, -1]), hp: roof.frame(3.9, Math.PI / 2), ar: roof.frame(5.9, Math.PI / 2),
-        ut1: fr([0.75, -1.2, -3.4], [0, -1, 0]), ut2: fr([-0.75, -1.2, -3.4], [0, -1, 0]),
+        eng: fr([0, 2.5, -9.05], [0, 0, -1]), hp: roof.frame(3.9, Math.PI / 2), ar: crew.slot(5.6, 0.62),
+        ut1: fr([1.75, -0.86, -1.7], [0, -1, 0], Math.PI / 2), ut2: fr([-1.75, -0.86, -1.7], [0, -1, 0], Math.PI / 2),
       },
       nozzles: [{ pos: [0, 0, -9.7], r: 1.5, len: 3.2 }],
       radiators: [1, -1].map((side) => ({ side, pos: [1.6 * side, 1.12, -1.6], fold: 1.5, geo: radiatorGeo(side, 7.2, 4.6) })),
       laser: [0, -1.0, 11.0], harpoon: [0, -1.75, 7.6], nav: [crew.frame(4.6, 0.05).o.toArray(), crew.frame(4.6, Math.PI - 0.05).o.toArray()],
       strobe: crew.frame(2.8, Math.PI / 2).o.toArray(), flood: [0, -0.6, 9.5],
       rcs: [crew.frame(6, 0.78).o.toArray(), crew.frame(6, Math.PI - 0.78).o.toArray(), drive.frame(-8.4, -0.78).o.toArray(), drive.frame(-8.4, Math.PI + 0.78).o.toArray()],
-      cam: 1, seat: [crew, spine, drive, ...spons],
+      cam: 1, seat: [crew, roof, spine, drive, ...spons, pylonC],
     };
   },
   // A racing pinnace: a long needle fuselage, two drive nacelles on swept pylons, canards,
@@ -261,7 +263,8 @@ const DESIGNS = {
     DETAIL.antenna(B, body.frame(-4.8, Math.PI / 2), 1.6);
     for (const h of nac) { const x = h.st[0].x; DETAIL.bell(B, [x, 0, -8.2], 0.82, 2.1); }
     // outboard pylons for auxiliary engines, pads facing aft
-    for (const sx of [1, -1]) B.add('accent', loftRaw([{ z: -6.6, a: 0.75, b: 0.28, x: 3.3 * sx, e: 5 }, { z: -4.0, a: 0.75, b: 0.28, x: 3.3 * sx, e: 5 }, { z: -2.8, a: 0.4, b: 0.12, x: 3.1 * sx, e: 4 }], L ? 8 : 20));
+    const outb = [1, -1].map((sx) => new Hull([{ z: -6.6, a: 0.75, b: 0.28, x: 3.3 * sx, e: 5 }, { z: -4.0, a: 0.75, b: 0.28, x: 3.3 * sx, e: 5 }, { z: -2.8, a: 0.4, b: 0.12, x: 3.1 * sx, e: 4 }], 20));
+    for (const h of outb) B.add('accent', h.raw(L));
     return {
       slots: {
         'eng-p': fr([3.75, 0, -6.6], [0, 0, -1]), 'eng-s': fr([-3.75, 0, -6.6], [0, 0, -1]),
@@ -271,7 +274,7 @@ const DESIGNS = {
       radiators: [1, -1].map((side) => ({ side, pos: [1.05 * side, 0, 0.6], fold: 1.2, geo: (() => { const g = radiatorGeo(side, 5.0, 3.0, 0.07); g.rotateY(side * 0.45); return g; })() })),
       laser: [0, -0.2, 14.3], harpoon: [0, -0.82, 8.1], nav: [nac[0].frame(-1.6, 0).o.toArray(), nac[1].frame(-1.6, Math.PI).o.toArray()],
       strobe: [0, 3.0, -7.6], flood: [0, -0.6, 11], rcs: [body.frame(6.4, 1).o.toArray(), body.frame(6.4, 2.1).o.toArray(), body.frame(-5.8, -1).o.toArray(), body.frame(-5.8, -2.1).o.toArray()],
-      cam: 0.95, seat: [body, ...nac],
+      cam: 0.95, seat: [body, ...nac, ...outb],
     };
   },
   // A Belter long-hauler: an armoured cab with a plough, a lattice spine carrying six framed
@@ -312,7 +315,7 @@ const DESIGNS = {
         'eng-p': fr([3.6, -1.8, -19.7], [0, 0, -1]), 'eng-s': fr([-3.6, -1.8, -19.7], [0, 0, -1]),
         hp: cab.frame(14.2, Math.PI / 2),
         ut1: fr([4.4, 0, 7], [1, 0, 0]), ut2: fr([-4.4, 0, 7], [-1, 0, 0]), ut3: fr([4.4, 0, -7], [1, 0, 0]), ut4: fr([-4.4, 0, -7], [-1, 0, 0]),
-        st1: cab.frame(16.6, 0), st2: cab.frame(16.6, Math.PI),
+        st1: cab.slot(16.6, 0), st2: cab.slot(16.6, Math.PI),
       },
       nozzles: [{ pos: [0, 0, -19.8], r: 1.7, len: 3.4 }, { pos: [2.4, 0.8, -19.8], r: 1.1, len: 2.4 }, { pos: [-2.4, 0.8, -19.8], r: 1.1, len: 2.4 }],
       radiators: [1, -1].map((side) => ({ side, pos: [1.2 * side, 2.1, -3], fold: 1.45, geo: radiatorGeo(side, 9.0, 7.4, 0.1) })),
@@ -331,10 +334,8 @@ const DESIGNS = {
       { z: 12.5, a: 2.0, b: 1.6, y: -0.35, e: 4.2 }, { z: 15.4, a: 0.9, b: 0.75, y: -0.5, e: 3.6 }, { z: 16.2, a: 0.4, b: 0.35, y: -0.55, e: 3 }], 56);
     const deck = new Hull([{ z: -7.0, a: 1.6, b: 0.4, y: 2.75, e: 6 }, { z: -6.0, a: 2.05, b: 0.75, y: 2.75, e: 6 }, { z: 6.0, a: 2.05, b: 0.75, y: 2.75, e: 6 }, { z: 9.6, a: 1.4, b: 0.45, y: 2.45, e: 5 }, { z: 10.4, a: 0.8, b: 0.15, y: 2.3, e: 4 }], 40);
     B.add('paint', hull.raw(L)); B.add('paint', deck.raw(L));
-    for (const sx of [1, -1]) {
-      const sp = new Hull([{ z: -10.8, a: 0.9, b: 0.8, x: 3.55 * sx, y: -1.4, e: 3 }, { z: -9.8, a: 1.0, b: 0.9, x: 3.55 * sx, y: -1.4, e: 3 }, { z: -4.2, a: 0.95, b: 0.85, x: 3.55 * sx, y: -1.4, e: 3 }, { z: -2.8, a: 0.3, b: 0.3, x: 3.55 * sx, y: -1.4, e: 2.5 }], 28);
-      B.add('dark', sp.raw(L));
-    }
+    const spons = [1, -1].map((sx) => new Hull([{ z: -10.8, a: 0.9, b: 0.8, x: 4.0 * sx, y: -1.4, e: 3 }, { z: -9.8, a: 1.0, b: 0.9, x: 4.0 * sx, y: -1.4, e: 3 }, { z: -4.2, a: 0.95, b: 0.85, x: 3.75 * sx, y: -1.4, e: 3 }, { z: -2.8, a: 0.3, b: 0.3, x: 3.6 * sx, y: -1.4, e: 2.5 }], 28));
+    for (const sp of spons) B.add('dark', sp.raw(L));
     // armour skirt round the drive
     B.add('dark', loftRaw([{ z: -13.0, a: 2.7, b: 2.7, e: 2.4 }, { z: -12.2, a: 3.0, b: 2.85, e: 3 }, { z: -11.2, a: 3.05, b: 2.75, e: 4 }], L ? 12 : 40));
     // armour panels on the flanks and shoulders, clear of the mounts
@@ -360,16 +361,16 @@ const DESIGNS = {
     DETAIL.bell(B, [0, 0, -13.0], 2.3, 4.4);
     return {
       slots: {
-        'eng-p': fr([3.55, -1.4, -10.85], [0, 0, -1]), 'eng-s': fr([-3.55, -1.4, -10.85], [0, 0, -1]),
+        'eng-p': fr([4.0, -1.4, -10.85], [0, 0, -1]), 'eng-s': fr([-4.0, -1.4, -10.85], [0, 0, -1]),
         hp1: deck.frame(3.6, Math.PI / 2), hp2: hull.frame(5.0, -Math.PI / 2), hp3: hull.frame(-1.0, 0), hp4: hull.frame(-1.0, Math.PI),
-        ut1: hull.frame(-3.4, 0.62), ut2: hull.frame(-3.4, Math.PI - 0.62), st1: hull.frame(7.6, 0.02), st2: hull.frame(7.6, Math.PI - 0.02),
+        ut1: hull.frame(-3.4, 0.62), ut2: hull.frame(-3.4, Math.PI - 0.62), st1: hull.slot(7.6, 0.02), st2: hull.slot(7.6, Math.PI - 0.02),
       },
       nozzles: [{ pos: [0, 0, -13.0], r: 2.3, len: 4.4 }],
       radiators: [1, -1].map((side) => ({ side, pos: [1.6 * side, 3.45, -1.0], fold: 1.4, geo: radiatorGeo(side, 6.4, 4.0) })),
       laser: [0, -0.55, 17.6], harpoon: [0, -1.85, 13.8], nav: [hull.frame(2.4, 0.02).o.toArray(), hull.frame(2.4, Math.PI - 0.02).o.toArray()],
       strobe: deck.frame(-2.0, Math.PI / 2).o.toArray(), flood: [0, -1.0, 15.2],
       rcs: [hull.frame(9.6, 0.75).o.toArray(), hull.frame(9.6, Math.PI - 0.75).o.toArray(), hull.frame(-9.6, -0.75).o.toArray(), hull.frame(-9.6, Math.PI + 0.75).o.toArray()],
-      cam: 1.45, seat: [hull, deck],
+      cam: 1.45, seat: [hull, deck, ...spons],
     };
   },
   // A 170 m battlecruiser: armoured main hull with belts, a long dorsal deck, a stepped bridge
@@ -397,10 +398,9 @@ const DESIGNS = {
     B.add('metal', cyl(1.5, 1.5, 34, 24), T([0, -3.4, 79], Q90X));
     for (let k = 0; k < 5; k++) B.add('dark', cyl(2.0, 2.0, 1.4, 24), T([0, -3.4, 66 + k * 6], Q90X));
     // engine outriggers and the dorsal engine housing
-    for (const sx of [1, -1]) {
-      B.add('dark', loftRaw([{ z: -51.6, a: 2.4, b: 2.8, x: 12.6 * sx, e: 4 }, { z: -38, a: 2.4, b: 2.8, x: 12.6 * sx, e: 4 }, { z: -33, a: 1.0, b: 1.2, x: 12.2 * sx, e: 3 }], L ? 10 : 28));
-    }
-    B.add('dark', loftRaw([{ z: -49.6, a: 3.0, b: 1.5, y: 11.6, e: 6 }, { z: -38, a: 3.0, b: 1.5, y: 11.6, e: 6 }, { z: -34, a: 1.6, b: 0.6, y: 10.8, e: 5 }], L ? 10 : 28));
+    const outr = [1, -1].map((sx) => new Hull([{ z: -51.6, a: 2.4, b: 2.8, x: 12.6 * sx, e: 4 }, { z: -38, a: 2.4, b: 2.8, x: 12.6 * sx, e: 4 }, { z: -33, a: 1.0, b: 1.2, x: 12.2 * sx, e: 3 }], 28));
+    const dorsalE = new Hull([{ z: -49.6, a: 3.0, b: 1.5, y: 11.6, e: 6 }, { z: -38, a: 3.0, b: 1.5, y: 11.6, e: 6 }, { z: -34, a: 1.6, b: 0.6, y: 10.8, e: 5 }], 28);
+    for (const h of [...outr, dorsalE]) B.add('dark', h.raw(L));
     // lit ports along both flanks, PDC blisters along the shoulders, hangar doors
     if (!L) {
       for (const a of [0.05, Math.PI - 0.05]) for (let z = -30; z <= 40; z += 7) DETAIL.windows(B, hull.frame(z, a), 6, 0.45, 0.3, 0.5, true);
@@ -419,15 +419,15 @@ const DESIGNS = {
     return {
       slots: {
         core: deck.frame(-4, Math.PI / 2), eng1: fr([12.6, 0, -51.7], [0, 0, -1]), eng2: fr([-12.6, 0, -51.7], [0, 0, -1]), eng3: fr([0, 11.6, -49.7], [0, 0, -1]),
-        hp1: hull.frame(44, Math.PI / 2), hp2: hull.frame(40, -Math.PI / 2), hp3: hull.frame(20, 0), hp4: hull.frame(20, Math.PI),
-        ut1: hull.frame(-24, 0.08), ut2: hull.frame(-24, Math.PI - 0.08), st1: hull.frame(48, 0.08), st2: hull.frame(48, Math.PI - 0.08),
+        hp1: deck.frame(33, Math.PI / 2), hp2: hull.frame(40, -Math.PI / 2), hp3: hull.frame(20, 0), hp4: hull.frame(20, Math.PI),
+        ut1: hull.frame(-24, 0.08), ut2: hull.frame(-24, Math.PI - 0.08), st1: hull.slot(48, 0.08), st2: hull.slot(48, Math.PI - 0.08),
       },
       nozzles: [{ pos: [0, 0, -78.5], r: 6.5, len: 12 }, { pos: [6.2, 4, -78.5], r: 3.6, len: 8 }, { pos: [-6.2, 4, -78.5], r: 3.6, len: 8 }, { pos: [0, -5, -78.5], r: 3.6, len: 8 }],
       radiators: [[1, -30], [-1, -30], [1, -12], [-1, -12]].map(([side, z]) => ({ side, pos: [hull.point(z, 0.42).x * side * 0.98, hull.point(z, 0.42).y, z], fold: 1.35, geo: radiatorGeo(side, 28, 14, 0.4) })),
       laser: [0, -3.4, 96.4], harpoon: [0, -6.4, 74], nav: [hull.frame(30, 0.02).o.toArray(), hull.frame(30, Math.PI - 0.02).o.toArray()],
       strobe: [0, 25.4, 15], flood: [0, -4, 84],
       rcs: [hull.frame(64, 0.8).o.toArray(), hull.frame(64, Math.PI - 0.8).o.toArray(), hull.frame(-68, -0.8).o.toArray(), hull.frame(-68, Math.PI + 0.8).o.toArray()],
-      cam: 6.5, seat: [hull, deck, tower],
+      cam: 6.5, seat: [hull, deck, tower, bridge, ...outr, dorsalE],
     };
   },
 };
@@ -461,6 +461,87 @@ function mountHardware(B, cls, fitted, m) {
       break;
   }
 }
+// a fitted part's model, placed on its mount
+function partVisual(type, frm, lift) {
+  if (!PROTOS[type]) PROTOS[type] = partPrototype(type);
+  const g = PROTOS[type].clone();
+  slotM(frm, lift).decompose(g.position, g.quaternion, g.scale);
+  g.updateMatrixWorld(true);
+  return g;
+}
+// the access bay of an internal fitting: a low armoured cover, vents, a status strip
+function internalBay(B, type, cls, m, fkey) {
+  const big = cls === 'core';
+  if (type === 5) {
+    const R = big ? 2.4 : 1.35;
+    B.add('dark', cyl(R + 0.2, R + 0.3, 0.3, 32), T([0, 0.15, 0]).premultiply(m));
+    B.add(fkey, cyl(R, R + 0.1, 0.35, 32), T([0, 0.42, 0]).premultiply(m));
+    B.add('dark', sph(R * 0.6, 24, 8, Math.PI / 2), T([0, 0.58, 0], null, [1, 0.28, 1]).premultiply(m));
+    if (!B.lod) for (let k = 0; k < 8; k++) { const a = (k / 8) * Math.PI * 2; B.add('reactorGlow', rbox(0.08, 0.05, R * 0.32, 0.02), T([Math.cos(a) * R * 0.78, 0.61, Math.sin(a) * R * 0.78], [0, -a + Math.PI / 2, 0]).premultiply(m)); }
+  } else {
+    B.add('dark', rbox(2.1, 0.22, 1.7, 0.08, B.lod), T([0, 0.11, 0]).premultiply(m));
+    B.add(fkey, rbox(1.8, 0.16, 1.4, 0.06, B.lod), T([0, 0.28, 0]).premultiply(m));
+    if (!B.lod) { B.add('cellGlow', rbox(1.2, 0.04, 0.06, 0.02), T([0, 0.37, 0.5]).premultiply(m)); for (const x of [-0.6, 0, 0.6]) B.add('metal', rbox(0.08, 0.06, 1.0, 0.02), T([x, 0.37, -0.1]).premultiply(m)); }
+  }
+}
+// welded armour following the hull: a two-layer patch with a bolt row
+function armourPlate(B, frm, fkey) {
+  const h = frm.hull, L = B.lod;
+  B.add(fkey, conformRaw(h, frm.z, frm.ang, 2.5, 1.7, 0.0, 0.22, L ? 2 : 8, L ? 2 : 8));
+  B.add(fkey, conformRaw(h, frm.z - 0.2, frm.ang, 2.0, 1.3, 0.22, 0.4, L ? 2 : 6, L ? 2 : 6));
+  if (!L) for (let k = -2; k <= 2; k++) { const f = h.frame(frm.z + k * 1.0, frm.ang); B.add('metal', cyl(0.06, 0.06, 0.08, 6), frameM(f, 0.44)); }
+}
+// Clearance check: every part each mount can take, placed as the builder places it, against the
+// hull, its other solids and the drive bells; and every pair of fitted parts against each other.
+function shipClearance(cls, tol = 0.12) {
+  const A = designOf(cls, 0).A, C = SHIP_CLASSES[cls];
+  const solids = A.seat.map((h) => (p) => h.depth(p));
+  for (const nz of A.nozzles) solids.push((p) => {
+    const t = (nz.pos[2] - p.z) / nz.len; if (t < 0 || t > 1) return -1;
+    return nz.r * (0.3 + 0.7 * Math.pow(t, 1.7)) + 0.1 - Math.hypot(p.x - nz.pos[0], p.y - nz.pos[1]);
+  });
+  // radiators, deployed
+  for (const r of A.radiators) {
+    r.geo.computeBoundingBox();
+    const bb = r.geo.boundingBox.clone().translate(new THREE.Vector3(...r.pos));
+    solids.push((p) => (bb.containsPoint(p) ? Math.min(p.x - bb.min.x, bb.max.x - p.x, p.y - bb.min.y, bb.max.y - p.y, p.z - bb.min.z, bb.max.z - p.z) : -1));
+  }
+  const issues = [], biggest = [];
+  const v = new THREE.Vector3();
+  const sample = (g, fn) => g.traverse((o) => {
+    if (!o.isMesh) return; const P = o.geometry.attributes.position, st = Math.max(1, Math.floor(P.count / 600));
+    for (let i = 0; i < P.count; i += st) { v.fromBufferAttribute(P, i).applyMatrix4(o.matrixWorld); fn(v); }
+  });
+  for (const s of C.slots) {
+    const frm = A.slots[s.id];
+    if (!frm) { issues.push({ slot: s.id, why: 'no mount frame' }); continue; }
+    let best = null;
+    for (let t = 0; t <= 9; t++) {
+      if (t === 7 || !fitsMount(t, s.cls) || t === 5 || t === 8 || (t === 0 && frm.hull)) continue;
+      const g = partVisual(t, frm, MOUNT_LIFT[s.cls] || 0.3);  // placed exactly as the builder does
+      let worst = 0;
+      sample(g, (p) => { for (const f of solids) worst = Math.max(worst, f(p)); });
+      if (worst > tol) issues.push({ slot: s.id, type: t, why: `inside the hull by ${worst.toFixed(2)} m` });
+      const bb = new THREE.Box3().setFromObject(g);
+      if (!best || bb.getSize(v).length() > best.size) best = { g, size: bb.getSize(new THREE.Vector3()).length(), type: t };
+    }
+    if (best) biggest.push({ slot: s.id, ...best });
+  }
+  // fitted parts against each other: vertices of one inside the other's own bounding box
+  for (const a of biggest) {
+    const inv = a.g.matrixWorld.clone().invert(), box = new THREE.Box3();
+    a.g.traverse((o) => { if (o.isMesh) { o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox.clone().applyMatrix4(o.matrix)); } });
+    box.expandByScalar(-0.08);
+    for (const b of biggest) {
+      if (a === b) continue;
+      let hits = 0;
+      sample(b.g, (p) => { if (box.containsPoint(p.clone().applyMatrix4(inv))) hits++; });
+      if (hits > 2) issues.push({ slot: `${a.slot}+${b.slot}`, type: `${a.type}/${b.type}`, why: `${hits} points of one inside the other` });
+    }
+  }
+  return issues;
+}
+
 // A salvaged part goes on with whatever is to hand: welded brackets in bare steel, a scorched
 // weld bead, and a power/coolant line run across the hull to the nearest hatch.
 function salvageFit(B, slot, m, seed) {
@@ -501,6 +582,8 @@ function ensureShipMats() {
   }
   MAT.glow = new THREE.MeshStandardMaterial({ color: '#120d07', roughness: 0.3, metalness: 0.1, emissive: new THREE.Color(2.2, 1.6, 0.95) });
   MAT.weld = new THREE.MeshStandardMaterial({ color: '#3b2f27', roughness: 0.85, metalness: 0.45 });
+  MAT.ember = MAT.ember || new THREE.MeshStandardMaterial({ color: '#120804', emissive: new THREE.Color(1.6, 0.42, 0.08), roughness: 0.9 });
+  IRM.ember = IRM.ember || irMaterial(0.55).mat;
 }
 function shipMat(cls, key) {
   switch (key) {
@@ -523,12 +606,52 @@ function designOf(cls, lod) {
   return d;
 }
 
+// A ship's destroyed state: the same design with blast holes through the hull (blackened
+// cavities, peeled plating, embers), dark windows, cold drives, snapped radiators, and some of
+// its fittings blown away. seed makes the damage repeatable.
+function destroyedDesign(clsId, seed) {
+  const A0 = designOf(clsId, 0).A, rnd = mulberry(seed);
+  const holes = [];
+  const n = clsId === 'battlecruiser' ? 6 : 3;
+  for (let k = 0; k < n * 4 && holes.length < n; k++) {
+    const h = A0.seat[Math.floor(rnd() * Math.min(A0.seat.length, 3))];
+    const z0 = h.st[0].z, z1 = h.st[h.st.length - 1].z;
+    const f = h.frame(z0 + (z1 - z0) * (0.15 + rnd() * 0.7), rnd() * Math.PI * 2);
+    const r = A0.cam * (0.9 + rnd() * 1.1);
+    if (holes.some((o) => o.c.distanceTo(f.o) < o.r + r)) continue;
+    holes.push({ c: f.o.clone(), n: f.n.clone(), r });
+  }
+  const make = (lod) => {
+    const B = new Batch(lod); B.holes = holes;
+    const A = DESIGNS[clsId](B);
+    B.holes = null;
+    for (const h of holes) {
+      // a scorched cavity behind the hole, plating peeled back round it, the odd ember
+      B.add('dark', sph(h.r * 0.95, lod ? 8 : 16, lod ? 6 : 10), T(h.c.clone().addScaledVector(h.n, -h.r * 0.35).toArray()));
+      if (lod) continue;
+      const fr0 = frameAtN(h.c, h.n);
+      for (let k = 0; k < 9; k++) {
+        const a = (k / 9) * Math.PI * 2 + rnd() * 0.5;
+        const m = frameM(fr0, 0).multiply(T([Math.cos(a) * h.r * 0.9, 0.05, Math.sin(a) * h.r * 0.9], [0, -a + Math.PI / 2, 0.5 + rnd() * 0.7]));
+        B.add(rnd() < 0.6 ? 'paint' : 'dark', rbox(h.r * (0.35 + rnd() * 0.35), 0.06 * A0.cam, h.r * (0.25 + rnd() * 0.3), 0.02), m);
+      }
+      for (let k = 0; k < 4; k++) B.add('ember', rbox(0.25 * A0.cam, 0.12 * A0.cam, 0.2 * A0.cam, 0.02), T(h.c.clone().addScaledVector(h.n, -h.r * 0.25).add(new THREE.Vector3((rnd() - 0.5) * h.r, (rnd() - 0.5) * h.r, (rnd() - 0.5) * h.r)).toArray()));
+    }
+    return { geos: B.geometries(), A, tris: B.triangles() };
+  };
+  return [make(0), make(1), rnd];
+}
+
 // Build a ship model: hull (two levels of detail), deployable radiators, drives with plumes,
 // lights, and the fitted parts on their mounts. fitted: [{ slot, type, prov, id }]
+// opts.destroyed (a seed) builds the ship's destroyed state instead of the working one.
 function buildShipModel(clsId, fitted, sc = scene, opts = {}) {
   ensureShipMats();
   const C = SHIP_CLASSES[clsId];
-  const D0 = designOf(clsId, 0), D1 = designOf(clsId, 1), A = D0.A;
+  const dead = opts.destroyed != null;
+  const [D0, D1, drnd] = dead ? destroyedDesign(clsId, opts.destroyed) : [designOf(clsId, 0), designOf(clsId, 1), null];
+  const A = D0.A;
+  if (dead) fitted = fitted.filter(() => drnd() > 0.35);   // some fittings were blown away
   const grp = new THREE.Group();
   const ir = { hull: irMaterial(0.2), rad: irMaterial(0.25), bell: irMaterial(0.2) };
   const mesh = (geo, mat, irm, shadow = true) => { const m = new THREE.Mesh(geo, mat); m.castShadow = shadow; m.receiveShadow = true; m.userData.ir = irm; return m; };
@@ -541,19 +664,24 @@ function buildShipModel(clsId, fitted, sc = scene, opts = {}) {
     const f = fitted.find((x) => x.slot === s.id);
     const frm = A.slots[s.id];
     if (!frm) return;
-    const m = frameM(frm, 0);
+    const m = slotM(frm, 0);
     for (const B of Bm) mountHardware(B, s.cls, !!f, m);
     const lift = MOUNT_LIFT[s.cls] || 0.3;
     if (f) {
-      if (!PROTOS[f.type]) PROTOS[f.type] = partPrototype(f.type);
-      const g = PROTOS[f.type].clone();
-      g.matrixAutoUpdate = true;
-      frameM(frm, lift).decompose(g.position, g.quaternion, g.scale);
-      if (f.type === 5 && s.cls !== 'core') g.scale.setScalar(0.7);
       const fi = factionIndex(f.prov);
-      paintPart(g, fi);
-      g.traverse((o) => { if (o.isMesh) o.userData.ir = ir.hull.mat; });
-      partsGrp.add(g);
+      const fkey = fi >= 0 ? ['tcn', 'ard', 'bfc'][fi] : 'accent';
+      if (f.type === 5 || f.type === 8) {
+        // reactors and capacitor banks are installed inside the hull: what shows is their bay
+        for (const B of Bm) internalBay(B, f.type, s.cls, m, fkey);
+      } else if (f.type === 0 && frm.hull) {
+        // armour is cut to the hull and welded on, following its curvature
+        for (const B of Bm) armourPlate(B, frm, fkey);
+      } else {
+        const g = partVisual(f.type, frm, lift);
+        paintPart(g, fi);
+        g.traverse((o) => { if (o.isMesh) o.userData.ir = ir.hull.mat; });
+        partsGrp.add(g);
+      }
       if (fi >= 0) salvageFit(Bm[0], s, m, (f.id || si + 1) * 7919 + si * 31);
     } else if (markerMat) {
       const mk = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.08, 6, 36), markerMat);
@@ -564,19 +692,22 @@ function buildShipModel(clsId, fitted, sc = scene, opts = {}) {
   const lodObj = new THREE.LOD();
   [D0, D1].forEach((D, lv) => {
     const lg = new THREE.Group();
-    for (const [key, geo] of D.geos) lg.add(mesh(geo, shipMat(clsId, key), ir.hull.mat, key !== 'glow' && key !== 'red' && key !== 'green' && key !== 'white'));
+    for (const [key, geo] of D.geos) lg.add(mesh(geo, dead && key === 'glow' ? MAT.glass : key === 'ember' ? MAT.ember : shipMat(clsId, key), key === 'ember' ? IRM.ember : ir.hull.mat, key !== 'glow' && key !== 'red' && key !== 'green' && key !== 'white' && key !== 'ember'));
     for (const [key, geo] of Bm[lv].geometries()) lg.add(mesh(geo, shipMat(clsId, key), ir.hull.mat));
     lodObj.addLevel(lg, lv === 0 ? 0 : 260 * A.cam);
   });
   grp.add(lodObj, partsGrp);
   // radiators
   const radMat = MAT.radiator.clone();
-  const radiators = A.radiators.map((r) => {
+  const radiators = [];
+  for (const r of A.radiators) {
     const pivot = new THREE.Group(); pivot.position.set(...r.pos);
     const panel = mesh(r.geo, radMat, ir.rad.mat);
     pivot.add(panel); grp.add(pivot);
-    return { pivot, side: r.side, panel, fold: r.fold };
-  });
+    // a dead ship's radiators hang where the blast left them, if they are there at all
+    if (dead) { if (drnd() < 0.3) pivot.visible = false; pivot.rotation.set((drnd() - 0.5) * 0.6, (drnd() - 0.5) * 0.4, r.side * (drnd() - 0.2) * r.fold); }
+    else radiators.push({ pivot, side: r.side, panel, fold: r.fold });
+  }
   // drives: the hot inner bell and the exhaust plume (the outer bell is part of the hull)
   const bellInMat = MAT.bellIn.clone();
   const plumeMat = new THREE.MeshBasicNodeMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
@@ -603,6 +734,7 @@ function buildShipModel(clsId, fitted, sc = scene, opts = {}) {
   const navG = new THREE.Mesh(new THREE.SphereGeometry(ls, 8, 6), MAT.green); navG.position.set(...A.nav[1]);
   const strobe = new THREE.Mesh(new THREE.SphereGeometry(ls * 0.9, 8, 6), MAT.white.clone()); strobe.position.set(...A.strobe);
   grp.add(navR, navG, strobe);
+  if (dead) { navR.visible = navG.visible = strobe.visible = false; }
   let flood = null;
   if (!opts.noLights) {
     flood = new THREE.SpotLight(new THREE.Color(1, 0.96, 0.88), 9000, 320 * A.cam, 0.36, 0.55, 1.8);
@@ -614,7 +746,7 @@ function buildShipModel(clsId, fitted, sc = scene, opts = {}) {
   return {
     grp, cls: clsId, radiators, radMat, nozzles, plume: nozzles[0].plume, core2: nozzles[0].core2, plumeU, engineLight, flood, strobe,
     bellInMat, ir, laserLocal: new THREE.Vector3(...A.laser), harpLocal: new THREE.Vector3(...A.harpoon), camScale: A.cam,
-    rcsPts: A.rcs.map((p) => new THREE.Vector3(...p)), slotMarkers, lod: lodObj,
+    rcsPts: A.rcs.map((p) => new THREE.Vector3(...p)), slotMarkers, lod: lodObj, fitted, dead,
   };
 }
 function disposeShipModel(m) {
