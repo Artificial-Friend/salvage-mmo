@@ -515,7 +515,7 @@ function buildMaterials() {
   MAT.bfc = surf('bfc', () => pbr(hullMaps({ seed: 41, base: '#8a8458', base2: '#c88a2a', stripe: '#1c1a14', rust: 0.45, scorch: 0.35, panel: 56, bare: 0.35, rough: 0.68 }), { side: THREE.DoubleSide }));
   MAT.metal = surf('metal', () => pbr(hullMaps({ seed: 51, base: '#9a9fa3', rust: 0.1, scorch: 0.1, panel: 160, bare: 0.9, rough: 0.35, decals: false })));
   MAT.dark = surf('dark', () => pbr(hullMaps({ seed: 61, base: '#2a2e31', rust: 0.15, scorch: 0.3, panel: 48, bare: 0.12, rough: 0.7, decals: false }), { side: THREE.DoubleSide }));
-  MAT.scav = surf('scav', () => pbr(hullMaps({ seed: 71, base: '#c27b26', base2: '#3b3f3a', stripe: '#111', rust: 0.3, scorch: 0.2, panel: 60, bare: 0.25, rough: 0.6 })));
+  MAT.scav = surf('scav', () => pbr(hullMaps({ seed: 71, base: '#4d2c22', base2: '#2b2826', stripe: '#7e1810', rust: 0.3, scorch: 0.2, panel: 60, bare: 0.25, rough: 0.6 })));
   MAT.drone = new THREE.MeshStandardMaterial({ color: '#2b2f33', roughness: 0.42, metalness: 0.85 });
   MAT.glass = new THREE.MeshStandardMaterial({ color: '#0b1216', roughness: 0.08, metalness: 0.2, emissive: new THREE.Color(0.05, 0.25, 0.28) });
   MAT.rock = new THREE.MeshStandardMaterial({ color: '#544c45', roughness: 0.92, metalness: 0.25, flatShading: true });
