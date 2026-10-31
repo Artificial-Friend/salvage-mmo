@@ -1,6 +1,6 @@
 # Roadmap
 
-Milestones match GitHub milestones; issues hold the detail.
+Milestones match GitHub milestones; issues hold the detail. The agreed gameplay steps, in build order, are in [`GAMEPLAY.md`](GAMEPLAY.md).
 
 ## M1 · Foundation
 Repository, CI, tests, standalone hosting, run telemetry for balance, split the client into real modules.
